@@ -1,0 +1,10 @@
+//
+// Created by PC on 04/02/2026.
+//
+
+#ifndef FOOBAR_AI_PREFERENCES_H
+#define FOOBAR_AI_PREFERENCES_H
+
+
+
+#endif //FOOBAR_AI_PREFERENCES_H

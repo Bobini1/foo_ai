@@ -1,0 +1,5 @@
+#pragma once
+#include <SDK/foobar2000.h>
+
+// Generate unique GUIDs for your component
+static const GUID guid_cfg_ai_endpoint = { 0x87654321, 0x4321, 0x4321, { 0x43, 0x21, 0x65, 0x87, 0x09, 0xba, 0xdc, 0xfe } };

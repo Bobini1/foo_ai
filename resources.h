@@ -1,0 +1,11 @@
+//
+// Created by PC on 04/02/2026.
+//
+
+#ifndef FOOBAR_AI_RESOURCES_H
+#define FOOBAR_AI_RESOURCES_H
+
+#define IDD_PREFERENCES     1001
+#define IDC_EDIT_ENDPOINT   1002
+
+#endif //FOOBAR_AI_RESOURCES_H
