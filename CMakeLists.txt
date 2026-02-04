@@ -12,11 +12,6 @@ add_library(foo_ai SHARED main.cpp
 )
 
 ## Add code to download https://www.foobar2000.org/downloads/SDK-2024-12-03.7z, unpack it to foobar_sdk and create a target foobar_sdk
-include(FetchContent)
-FetchContent_Declare(
-        foobar
-        GIT_REPOSITORY https://github.com/Bobini1/foosdk.git
-        GIT_TAG master
-)
-FetchContent_MakeAvailable(foobar)
-target_link_libraries(foo_ai PRIVATE foosdk_shared foosdk wtl foosdk_ppui foosdk_helpers)
+find_package(foosdk REQUIRED)
+find_package(mcp REQUIRED)
+target_link_libraries(foo_ai PRIVATE foosdk::shared foosdk::foosdk foosdk::ppui foosdk::helpers mcp::mcp)
