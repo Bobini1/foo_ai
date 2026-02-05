@@ -1,0 +1,52 @@
+{
+  "version": 10,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "x64",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+      }
+    },
+    {
+      "name": "x86",
+      "inherits": "x64",
+      "description": "Build for x86 architecture",
+      "architecture": "Win32",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x86-windows-static"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "x64",
+      "configurePreset": "x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "x86",
+      "configurePreset": "x86",
+      "configuration": "Release"
+    },
+    {
+      "name": "x64-Debug",
+      "configurePreset": "x64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "x86-Debug",
+      "configurePreset": "x86",
+      "configuration": "Debug"
+    }
+  ]
+}

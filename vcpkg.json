@@ -1,0 +1,8 @@
+{
+  "name": "foobar-ai",
+  "version-semver": "0.1.0",
+  "dependencies": [
+    "foosdk",
+    "cpp-mcp"
+  ]
+}

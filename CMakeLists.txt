@@ -9,6 +9,8 @@ add_library(foo_ai SHARED main.cpp
         guid.h
         resources.h
         foo_ai.rc
+        mcp.cpp
+        mcp.h
 )
 
 ## Add code to download https://www.foobar2000.org/downloads/SDK-2024-12-03.7z, unpack it to foobar_sdk and create a target foobar_sdk

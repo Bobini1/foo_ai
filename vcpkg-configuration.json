@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg-configuration.schema.json",
+  "default-registry": {
+    "kind": "git",
+    "repository": "https://github.com/Bobini1/vcpkg",
+    "baseline": "3dea9590f401e38dcc4e5672829a28cf8ed92e39"
+  },
+  "overlay-ports": [
+    "./vcpkg-overlay"
+  ]
+}
