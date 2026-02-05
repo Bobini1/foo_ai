@@ -12,7 +12,7 @@
 class foobar_mcp
 {
     std::unique_ptr<mcp::server> server;
-    mcp::json hello_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json list_library_handler(const mcp::json& params, const std::string& session_id);
 
 public:
     foobar_mcp(const std::string& host, int port);
