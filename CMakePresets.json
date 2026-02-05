@@ -23,7 +23,8 @@
       "description": "Build for x86 architecture",
       "architecture": "Win32",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x86-windows-static"
+        "VCPKG_TARGET_TRIPLET": "x86-windows-static",
+        "CMAKE_CXX_FLAGS_INIT": "/D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00"
       }
     }
   ],

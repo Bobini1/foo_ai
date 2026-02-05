@@ -11,9 +11,10 @@ add_library(foo_ai SHARED main.cpp
         foo_ai.rc
         mcp.cpp
         mcp.h
+        initquit.cpp
 )
 
-## Add code to download https://www.foobar2000.org/downloads/SDK-2024-12-03.7z, unpack it to foobar_sdk and create a target foobar_sdk
 find_package(foosdk REQUIRED)
 find_package(mcp REQUIRED)
 target_link_libraries(foo_ai PRIVATE foosdk::shared foosdk::foosdk foosdk::ppui foosdk::helpers mcp::mcp)
+target_compile_definitions(foo_ai PRIVATE UNICODE _UNICODE _WIN32_WINNT=0x0A00 WINVER=0x0A00)
