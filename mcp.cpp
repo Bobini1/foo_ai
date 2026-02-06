@@ -99,12 +99,9 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
             }
         }
 
-        size_t total = items.get_count();
-        size_t start = std::min<size_t>(offset, total);
-        size_t end = std::min<size_t>(start + limit, total);
-
-        auto get_path = fields.count("path") > 0;
-        auto get_duration = fields.count("duration_seconds") > 0;
+        const size_t total = items.get_count();
+        const size_t start = std::min<size_t>(offset, total);
+        const size_t end = std::min<size_t>(start + limit, total);
 
         for (size_t i = start; i < end; ++i)
         {
