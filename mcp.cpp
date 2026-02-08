@@ -10,7 +10,12 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
     // Set server info and capabilities
     server.set_server_info("foo_ai", "1.0.0");
     server.set_capabilities({
-        {"tools", mcp::json::object()}
+        {
+            "tools", mcp::json::object(),
+            "resources", {
+                "subscribe", true
+            }
+        }
     });
 
     // Register the list_library tool

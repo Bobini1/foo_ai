@@ -25,7 +25,8 @@ class foobar_mcp
     mcp::json list_current_track_handler(const mcp::json& params, const std::string& session_id) const;
 
 public:
-    foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource, std::shared_ptr<current_track_resource> current_track_resource);
+    foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource,
+               std::shared_ptr<current_track_resource> current_track_resource);
 };
 
 class mcp_manager
