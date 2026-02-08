@@ -23,6 +23,18 @@ class foobar_mcp
     mcp::json list_library_handler(const mcp::json& params, const std::string& session_id);
     mcp::json list_playlist_handler(const mcp::json& params, const std::string& session_id) const;
     mcp::json list_current_track_handler(const mcp::json& params, const std::string& session_id) const;
+    mcp::json add_tracks_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json remove_tracks_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json remove_all_tracks_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json move_tracks_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json set_active_playlist_handler(const mcp::json& params, const std::string& session_id) const;
+    mcp::json set_playing_playlist_handler(const mcp::json& params, const std::string& session_id) const;
+    mcp::json set_playback_state_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json play_at_index_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json set_focus_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json create_playlist_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json rename_playlist_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json delete_playlist_handler(const mcp::json& params, const std::string& session_id);
 
 public:
     foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource,

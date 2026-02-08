@@ -14,6 +14,17 @@ void playlist_resource::on_playlist_activate(t_size p_old, t_size p_new)
 void playlist_resource::on_playlist_created(t_size p_index, const char* p_name, t_size p_name_len)
 {
     playlist_update_times[p_index] = std::chrono::steady_clock::now();
+    const auto guid = pfc::createGUID();
+    const auto id = pfc::print_guid(guid);
+    if (p_index >= playlist_ids.size()) [[likely]]
+    {
+        playlist_ids.resize(p_index + 1);
+        for (t_size i = playlist_ids.size() - 1; i > p_index; --i)
+        {
+            playlist_ids[i] = playlist_ids[i - 1];
+        }
+    }
+    playlist_ids[p_index] = id;
     notify_changed();
 }
 
@@ -100,6 +111,18 @@ playlist_resource::playlist_resource() : resource("playlists://."), playlist_cal
                                              flag_on_items_removing | flag_on_items_removed |
                                              flag_on_items_modified | flag_on_items_replaced)
 {
+    fb2k::inMainThreadSynchronous2([this]()
+    {
+        const auto count = playlist_manager::get()->get_playlist_count();
+        playlist_update_times.resize(count);
+        playlist_ids.resize(count);
+        for (t_size i = 0; i < count; ++i)
+        {
+            auto guid = pfc::createGUID();
+            const auto id = pfc::print_guid(guid);
+            playlist_ids[i] = id;
+        }
+    });
 }
 
 mcp::json playlist_resource::get_metadata() const
@@ -120,7 +143,7 @@ mcp::json playlist_resource::get_metadata() const
 mcp::json playlist_resource::read() const
 {
     auto promise = std::promise<std::vector<mcp::json>>{};
-    fb2k::inMainThread([this, &promise]()
+    fb2k::inMainThreadSynchronous2([this, &promise]()
     {
         auto now = std::chrono::steady_clock::now();
         auto count = playlist_manager::get()->get_playlist_count();
