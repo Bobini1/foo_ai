@@ -2,8 +2,10 @@
 #include <SDK/foobar2000.h>
 #include <future>
 
-foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource)
-    : server(mcp::server::configuration{host, port}), m_playlist_resource(std::move(playlist_resource))
+foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource,
+                       std::shared_ptr<current_track_resource> current_track_resource)
+    : server(mcp::server::configuration{host, port}), m_playlist_resource(std::move(playlist_resource)),
+      m_current_track_resource(std::move(current_track_resource))
 {
     // Set server info and capabilities
     server.set_server_info("foo_ai", "1.0.0");
@@ -21,7 +23,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                             false)
                                         .with_array_param("fields", "Fields to return: "
                                                           "path, duration_seconds or any tag contained in audio files. "
-                                                          "Default: path, artist, title, album, duration_seconds",
+                                                          "Default: path, artist, title, album",
                                                           "string",
                                                           false)
                                         .build();
@@ -39,7 +41,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                              false)
                                          .with_array_param("fields", "Fields to return: "
                                                            "path, duration_seconds or any tag contained in audio files. "
-                                                           "Default: path, artist, title, album, duration_seconds",
+                                                           "Default: path, artist, title, album",
                                                            "string",
                                                            false)
                                          .build();
@@ -53,8 +55,8 @@ struct result
     size_t total;
 };
 
-static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, int limit, int offset, std::string query,
-                            std::vector<std::string> fields)
+static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limit, const int offset, const std::string& query,
+                            const std::vector<std::string>& fields)
 {
     std::promise<result> promise;
     auto future = promise.get_future();
@@ -133,7 +135,7 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
     int limit = 50;
     int offset = 0;
     std::string query;
-    std::vector<std::string> fields = {"path", "artist", "title", "album", "duration_seconds"};
+    std::vector<std::string> fields = {"path", "artist", "title", "album"};
 
     if (params.contains("limit")) limit = params["limit"].get<int>();
     if (params.contains("offset")) offset = params["offset"].get<int>();
@@ -162,7 +164,7 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
             {"type", "text"},
             {
                 "text",
-                std::format("total_tracks: {}, Returned tracks: {}, tracks: {}", total, tracks.size(), tracks.dump())
+                std::format("Total tracks: {}, Returned tracks: {}, tracks: {}", total, tracks.size(), tracks.dump())
             }
         }
     };
@@ -177,7 +179,7 @@ struct playlist_result
 
 mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::string& session_id) const
 {
-    if (!params.contains("playlist_id") || !params["playlist_id"].is_string())
+    if (!params.contains("playlist_id"))
     {
         throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id (string) parameter is required");
     }
@@ -185,7 +187,7 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
     int limit = 50;
     int offset = 0;
     std::string query;
-    std::vector<std::string> fields = {"path", "artist", "title", "album", "duration_seconds"};
+    std::vector<std::string> fields = {"path", "artist", "title", "album"};
     auto playlist_id = params["playlist_id"].get<std::string>();
     if (params.contains("limit")) limit = params["limit"].get<int>();
     if (params.contains("offset")) offset = params["offset"].get<int>();
@@ -200,8 +202,11 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
     }
 
     auto promise = std::promise<playlist_result>{};
+    auto playing = false;
+    auto active = false;
     fb2k::inMainThread(
-        [this, &promise, limit, offset, query = std::move(query), fields = std::move(fields), playlist_id]()
+        [this, &promise, limit, offset, query = std::move(query), fields = std::move(fields), playlist_id, &playing, &
+            active]() mutable
         {
             pfc::list_t<metadb_handle_ptr> items;
             auto index = m_playlist_resource->get_playlist_index(playlist_id);
@@ -211,6 +216,9 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
                     std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
                 return;
             }
+            active = playlist_manager::get()->get_active_playlist() == index.value();
+            playing = playlist_manager::get()->get_playing_playlist() == index.value();
+
             playlist_manager::get()->playlist_enum_items(index.value(),
                                                          [&items](size_t, const metadb_handle_ptr& handle, bool)
                                                          {
@@ -241,8 +249,10 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
             {"type", "text"},
             {
                 "text",
-                std::format("Current focused track: {} (index {}), total_tracks: {}, Returned tracks: {}, tracks: {}",
-                            path.empty() ? "None" : path, index, total, tracks.size(), tracks.dump())
+                std::format(
+                    "Playing?: {}, Active? {}, Current focused track: {} (index {}), Total tracks: {}, Returned tracks: {}, tracks: {}",
+                    playing ? "Yes" : "No", active ? "Yes" : "No", path.empty() ? "None" : path, index, total,
+                    tracks.size(), tracks.dump())
             }
         }
     };
@@ -318,7 +328,7 @@ mcp_manager& mcp_manager::instance()
 
 void mcp_manager::start(const std::string& host, int port)
 {
-    server = std::make_unique<foobar_mcp>(host, port, playlist_resource);
+    server = std::make_unique<foobar_mcp>(host, port, playlist_resource, current_track_resource);
 }
 
 void mcp_manager::stop()

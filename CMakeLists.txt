@@ -14,6 +14,8 @@ add_library(foo_ai SHARED main.cpp
         initquit.cpp
         playlist_resource.cpp
         playlist_resource.h
+        current_track_resource.cpp
+        current_track_resource.h
 )
 
 find_package(foosdk REQUIRED)

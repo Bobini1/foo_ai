@@ -112,7 +112,7 @@ mcp::json playlist_resource::get_metadata() const
             "Tracks the state of playlists, their names, the number of tracks, the \"last modified timestamp\", and the active playlist. "
             "Subscribe to this resource to get notified of changes to playlists, and read it to get the current state of playlists. "
             "Pay attention to playlist state changes to avoid overwriting wrong playlists. "
-            "To get the tracks in a playlist, call the list_playlist tool with the appropriate playlist ID. "
+            "To get the tracks in a playlist, call the list_playlist tool with the appropriate playlist ID."
         }
     };
 }
@@ -122,21 +122,29 @@ mcp::json playlist_resource::read() const
     auto promise = std::promise<std::vector<mcp::json>>{};
     fb2k::inMainThread([this, &promise]()
     {
+        auto now = std::chrono::steady_clock::now();
         auto count = playlist_manager::get()->get_playlist_count();
         auto active = playlist_manager::get()->get_active_playlist();
+        auto playing = playlist_manager::get()->get_playing_playlist();
         auto playlists = std::vector<mcp::json>{};
         for (t_size i = 0; i < count; ++i)
         {
             auto lastModified = std::chrono::duration_cast<std::chrono::seconds>(
-                playlist_update_times[i].time_since_epoch());
+                now - playlist_update_times[i]);
             auto id = playlist_ids[i];
             auto name = pfc::string8{};
             auto playlist_info = mcp::json{
                 {"id", id},
                 {"name", name.c_str()},
                 {"track_count", playlist_manager::get()->playlist_get_item_count(i)},
-                {"last_modified", lastModified.count()},
-                {"active", i == active}
+                {
+                    "last_modified",
+                    playlist_update_times[i] == std::chrono::steady_clock::time_point{}
+                        ? "Unknown"
+                        : std::format("{} seconds ago", lastModified.count())
+                },
+                {"active", i == active},
+                {"playing", i == playing}
             };
             playlists.push_back(std::move(playlist_info));
         }
@@ -148,7 +156,6 @@ mcp::json playlist_resource::read() const
 
     return {
         {"uri", get_uri()},
-        {"name", "Playlists"},
         {"text", playlists}
     };
 }
