@@ -138,7 +138,8 @@ mcp::json playlist_resource::get_metadata() const
             "Tracks the state of playlists, their names, the number of tracks, the \"last modified timestamp\", and the active playlist. "
             "Subscribe to this resource to get notified of changes to playlists, and read it to get the current state of playlists. "
             "Pay attention to playlist state changes to avoid overwriting wrong playlists. "
-            "To get the tracks in a playlist, call the list_playlist tool with the appropriate playlist ID."
+            "To get the tracks in a playlist, call the list_playlist tool with the appropriate playlist ID. "
+            "GUIDs will change on server restart so try re-reading the resource if tools are returning errors."
         }
     };
 }
