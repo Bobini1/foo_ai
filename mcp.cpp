@@ -1,14 +1,12 @@
 #include "mcp.h"
 #include "safe_main_thread_call.h"
 #include <SDK/foobar2000.h>
-#include <future>
 
 foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource,
                        std::shared_ptr<current_track_resource> current_track_resource)
     : server(mcp::server::configuration{host, port}), m_playlist_resource(std::move(playlist_resource)),
       m_current_track_resource(std::move(current_track_resource))
 {
-    // Set server info and capabilities
     server.set_server_info("foo_ai", "1.0.0");
     server.set_capabilities({
         mcp::json::object({
@@ -45,16 +43,20 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
 
     const mcp::tool list_playlist_tool = mcp::tool_builder("list_playlist")
                                          .with_description("Get tracks from a playlist")
-                                         .with_string_param("playlist_guid", "ID of the playlist to retrieve tracks from",
+                                         .with_string_param("playlist_guid",
+                                                            "ID of the playlist to retrieve tracks from",
                                                             true)
                                          .with_number_param("limit", "Max tracks to return (default: 50)", false)
                                          .with_number_param("offset", "Skip first N tracks", false)
                                          .with_string_param(
-                                             "query", "foobar2000 search query (e.g. 'artist HAS beatles')",
+                                             "query", "foobar2000 search query (e.g. 'artist HAS beatles')"
+                                             "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Query_syntax ",
                                              false)
                                          .with_array_param("fields", "Fields to return: "
                                                            "path, duration_seconds or any tag contained in audio files. "
-                                                           "Default: path, artist, title, album",
+                                                           "Default: path, artist, title, album "
+                                                           "Other common tags: genre, date, composer, performer, "
+                                                           "album artist, track number, disc number, comment, subtitle",
                                                            "string",
                                                            false)
                                          .build();
@@ -76,7 +78,8 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                     .with_description(
                                         "Set the active playlist. Adding, modifying and removing tracks happens on the active playlist. "
                                         "This does not change the currently playing playlist or track. ")
-                                    .with_string_param("playlist_guid", "ID of the playlist to set as active", true)
+                                    .with_string_param("playlist_guid", "GUID of the playlist to set as active. "
+                                                       "Get GUIDs from the playlists://. resource.", true)
                                     .build();
 
     server.register_tool(set_active_playlist_tool, std::bind_front(&foobar_mcp::set_active_playlist_handler, this));
@@ -85,8 +88,10 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                      .with_description(
                                          "Set the playing playlist. Also sets it as the active playlist. "
                                          "The music player will start picking tracks to play from this playlist. "
-                                         "Does not stop the currently playing track or change the playback state.")
-                                     .with_string_param("playlist_guid", "ID of the playlist to set as currently playing",
+                                         "Does not start playback on its own. Use set_playback_state to play or pause.")
+                                     .with_string_param("playlist_guid",
+                                                        "GUID of the playlist to set as currently playing. "
+                                                        "Get GUIDs from the playlists://. resource.",
                                                         true)
                                      .build();
 
@@ -94,7 +99,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
 
     auto set_playback_state_tool = mcp::tool_builder("set_playback_state")
                                    .with_description(
-                                       "Set the playback state. Played (true) or paused (false). "
+                                       "Set the playback state. Playing (true) or paused (false). "
                                        "This does not change the currently playing track or playlist.")
                                    .with_boolean_param("state", "Playback state to set", true)
                                    .build();
@@ -174,6 +179,7 @@ static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limi
     mcp::json tracks = mcp::json::array();
 
     // Apply search filter if query provided
+    auto list = metadb_handle_list{items};
     if (!query.empty())
     {
         try
@@ -185,23 +191,22 @@ static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limi
                                                           }),
                                                           search_filter_manager_v2::KFlagSuppressNotify);
 
-            auto list = metadb_handle_list{items};
             filter->test_multi_here(list, fb2k::noAbort);
         }
         catch (std::exception& e)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params,
-                                    std::format("Invalid search query: {}", e.what()));
+                                     std::format("Invalid search query: {}", e.what()));
         }
     }
 
-    const size_t total = items.get_count();
+    const size_t total = list.get_count();
     const size_t start = std::min<size_t>(offset, total);
     const size_t end = std::min<size_t>(start + limit, total);
 
     for (size_t i = start; i < end; ++i)
     {
-        metadb_handle_ptr item = items[i];
+        metadb_handle_ptr item = list[i];
         mcp::json track;
 
         metadb_info_container::ptr info_ptr;
@@ -335,7 +340,8 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
                     result2.current_track_path = track->get_path();
                 }
             }
-            return std::make_tuple(result2.result, result2.current_track_index, result2.current_track_path, playing, active, name);
+            return std::make_tuple(result2.result, result2.current_track_index, result2.current_track_path, playing,
+                                   active, name);
         });
 
     auto [tracks, total] = result;
@@ -415,6 +421,7 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
     auto position = params.value("position", SIZE_MAX);
 
     auto paths = params["paths"].get<std::vector<std::string>>();
+    auto paths_size = paths.size();
 
     auto added = safe_main_thread_call([paths = std::move(paths), position]()
     {
@@ -447,7 +454,7 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
             {"type", "text"},
             {
                 "text",
-                std::format("Added {} tracks to the active playlist ({} failed)", added, paths.size() - added)
+                std::format("Added {} tracks to the active playlist ({} failed)", added, paths_size - added)
             }
         }
     };
@@ -456,6 +463,7 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
 mcp::json foobar_mcp::remove_tracks_handler(const mcp::json& params, const std::string& session_id)
 {
     auto track_indices = params["track_indices"].get<std::set<size_t>>();
+    auto track_indices_size = track_indices.size();
 
     auto removed = safe_main_thread_call([track_indices = std::move(track_indices)]()
     {
@@ -475,7 +483,7 @@ mcp::json foobar_mcp::remove_tracks_handler(const mcp::json& params, const std::
             {"type", "text"},
             {
                 "text",
-                std::format("Removed {} tracks from the playlist ({} failed)", removed, track_indices.size() - removed)
+                std::format("Removed {} tracks from the playlist ({} failed)", removed, track_indices_size - removed)
             }
         }
     };
@@ -528,7 +536,7 @@ mcp::json foobar_mcp::move_tracks_handler(const mcp::json& params, const std::st
             if (target >= item_count || seen[target])
             {
                 throw mcp::mcp_exception(mcp::error_code::invalid_params,
-                                       "order must be a valid permutation of track indices");
+                                         "order must be a valid permutation of track indices");
             }
             seen[target] = true;
             reorder[i] = target;
