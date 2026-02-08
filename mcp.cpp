@@ -1,4 +1,5 @@
 #include "mcp.h"
+#include "safe_main_thread_call.h"
 #include <SDK/foobar2000.h>
 #include <future>
 
@@ -39,7 +40,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
 
     const mcp::tool list_playlist_tool = mcp::tool_builder("list_playlist")
                                          .with_description("Get tracks from a playlist")
-                                         .with_string_param("playlist_id", "ID of the playlist to retrieve tracks from",
+                                         .with_string_param("playlist_guid", "ID of the playlist to retrieve tracks from",
                                                             true)
                                          .with_number_param("limit", "Max tracks to return (default: 50)", false)
                                          .with_number_param("offset", "Skip first N tracks", false)
@@ -70,7 +71,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                     .with_description(
                                         "Set the active playlist. Adding, modifying and removing tracks happens on the active playlist. "
                                         "This does not change the currently playing playlist or track. ")
-                                    .with_string_param("playlist_id", "ID of the playlist to set as active", true)
+                                    .with_string_param("playlist_guid", "ID of the playlist to set as active", true)
                                     .build();
 
     server.register_tool(set_active_playlist_tool, std::bind_front(&foobar_mcp::set_active_playlist_handler, this));
@@ -80,7 +81,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                          "Set the playing playlist. Also sets it as the active playlist. "
                                          "The music player will start picking tracks to play from this playlist. "
                                          "Does not stop the currently playing track or change the playback state.")
-                                     .with_string_param("playlist_id", "ID of the playlist to set as currently playing",
+                                     .with_string_param("playlist_guid", "ID of the playlist to set as currently playing",
                                                         true)
                                      .build();
 
@@ -141,14 +142,14 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
 
     auto rename_playlist_tool = mcp::tool_builder("rename_playlist")
                                 .with_description("Rename an existing playlist")
-                                .with_string_param("playlist_id", "ID of the playlist to rename", true)
+                                .with_string_param("playlist_guid", "ID of the playlist to rename", true)
                                 .with_string_param("new_name", "New name for the playlist", true)
                                 .build();
     server.register_tool(rename_playlist_tool, std::bind_front(&foobar_mcp::rename_playlist_handler, this));
 
     auto delete_playlist_tool = mcp::tool_builder("delete_playlist")
                                 .with_description("Delete a playlist")
-                                .with_string_param("playlist_id", "ID of the playlist to delete", true)
+                                .with_string_param("playlist_guid", "ID of the playlist to delete", true)
                                 .build();
     server.register_tool(delete_playlist_tool, std::bind_front(&foobar_mcp::delete_playlist_handler, this));
 
@@ -165,74 +166,64 @@ static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limi
                             const std::string& query,
                             const std::vector<std::string>& fields)
 {
-    std::promise<result> promise;
-    auto future = promise.get_future();
+    mcp::json tracks = mcp::json::array();
 
-    fb2k::inMainThreadSynchronous2([=, &promise, items = std::move(items)]() mutable
+    // Apply search filter if query provided
+    if (!query.empty())
     {
-        mcp::json tracks = mcp::json::array();
-
-        // Apply search filter if query provided
-        if (!query.empty())
+        try
         {
-            try
-            {
-                auto mgr = search_filter_manager_v2::get();
-                search_filter_v2::ptr filter = mgr->create_ex(query.c_str(),
-                                                              fb2k::makeCompletionNotify([](unsigned)
-                                                              {
-                                                              }),
-                                                              search_filter_manager_v2::KFlagSuppressNotify);
+            auto mgr = search_filter_manager_v2::get();
+            search_filter_v2::ptr filter = mgr->create_ex(query.c_str(),
+                                                          fb2k::makeCompletionNotify([](unsigned)
+                                                          {
+                                                          }),
+                                                          search_filter_manager_v2::KFlagSuppressNotify);
 
-                auto list = metadb_handle_list{items};
-                filter->test_multi_here(list, fb2k::noAbort);
-            }
-            catch (...)
-            {
-                promise.set_exception(std::current_exception());
-                return;
-            }
+            auto list = metadb_handle_list{items};
+            filter->test_multi_here(list, fb2k::noAbort);
         }
-
-        const size_t total = items.get_count();
-        const size_t start = std::min<size_t>(offset, total);
-        const size_t end = std::min<size_t>(start + limit, total);
-
-        for (size_t i = start; i < end; ++i)
+        catch (std::exception& e)
         {
-            metadb_handle_ptr item = items[i];
-            mcp::json track;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params,
+                                    std::format("Invalid search query: {}", e.what()));
+        }
+    }
 
-            metadb_info_container::ptr info_ptr;
-            if (item->get_info_ref(info_ptr))
+    const size_t total = items.get_count();
+    const size_t start = std::min<size_t>(offset, total);
+    const size_t end = std::min<size_t>(start + limit, total);
+
+    for (size_t i = start; i < end; ++i)
+    {
+        metadb_handle_ptr item = items[i];
+        mcp::json track;
+
+        metadb_info_container::ptr info_ptr;
+        if (item->get_info_ref(info_ptr))
+        {
+            const file_info& info = info_ptr->info();
+
+            for (const auto& field : fields)
             {
-                const file_info& info = info_ptr->info();
-
-                for (const auto& field : fields)
+                if (field == "path")
                 {
-                    if (field == "path")
-                    {
-                        track["path"] = item->get_path();
-                    }
-                    else if (field == "duration_seconds")
-                    {
-                        track["duration_seconds"] = info.get_length();
-                    }
-                    else if (info.meta_exists(field.c_str()))
-                    {
-                        track[field] = info.meta_get(field.c_str(), 0);
-                    }
+                    track["path"] = item->get_path();
+                }
+                else if (field == "duration_seconds")
+                {
+                    track["duration_seconds"] = info.get_length();
+                }
+                else if (info.meta_exists(field.c_str()))
+                {
+                    track[field] = info.meta_get(field.c_str(), 0);
                 }
             }
-
-            tracks.push_back(track);
         }
 
-        promise.set_value({std::move(tracks), total});
-    });
+        tracks.push_back(track);
+    }
 
-    using namespace std::string_literals;
-    auto [tracks, total] = future.get();
     return {std::move(tracks), total};
 }
 
@@ -255,16 +246,13 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
         }
     }
 
-    auto promise = std::promise<result>{};
-    fb2k::inMainThreadSynchronous2([&promise, limit, offset, query = std::move(query), fields = std::move(fields)]()
+    auto [tracks, total] = safe_main_thread_call([limit, offset, query = std::move(query), fields = std::move(fields)]()
     {
         const auto lib_api = library_manager::get();
         pfc::list_t<metadb_handle_ptr> items;
         lib_api->get_all_items(items);
-        promise.set_value(handle_tracks(items, limit, offset, query, fields));
+        return handle_tracks(items, limit, offset, query, fields);
     });
-
-    auto [tracks, total] = promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -285,16 +273,16 @@ struct playlist_result
 
 mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::string& session_id) const
 {
-    if (!params.contains("playlist_id"))
+    if (!params.contains("playlist_guid"))
     {
-        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id parameter is required");
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_guid parameter is required");
     }
 
     int limit = 50;
     int offset = 0;
     std::string query;
     std::vector<std::string> fields = {"path", "artist", "title", "album"};
-    auto playlist_id = params["playlist_id"].get<std::string>();
+    auto playlist_guid = params["playlist_guid"].get<std::string>();
     if (params.contains("limit")) limit = params["limit"].get<int>();
     if (params.contains("offset")) offset = params["offset"].get<int>();
     if (params.contains("query")) query = params["query"].get<std::string>();
@@ -307,27 +295,20 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
         }
     }
 
-    auto promise = std::promise<playlist_result>{};
-    auto playing = false;
-    auto active = false;
-    auto name = std::string{};
-    fb2k::inMainThreadSynchronous2(
-        [this, &promise, limit, offset, query = std::move(query), fields = std::move(fields), playlist_id, &playing, &
-            active, &name]() mutable
+    auto [result, index, path, playing, active, name] = safe_main_thread_call(
+        [this, limit, offset, query = std::move(query), fields = std::move(fields), playlist_guid]()
         {
             pfc::list_t<metadb_handle_ptr> items;
-            auto index = m_playlist_resource->get_playlist_index(playlist_id);
+            auto index = m_playlist_resource->get_playlist_index(playlist_guid);
             if (!index.has_value())
             {
-                promise.set_exception(
-                    std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
-                return;
+                throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
             }
-            active = playlist_manager::get()->get_active_playlist() == index.value();
-            playing = playlist_manager::get()->get_playing_playlist() == index.value();
+            bool active = playlist_manager::get()->get_active_playlist() == index.value();
+            bool playing = playlist_manager::get()->get_playing_playlist() == index.value();
             auto name_ptr = pfc::string8{};
             playlist_manager::get()->playlist_get_name(index.value(), name_ptr);
-            name = name_ptr.c_str();
+            std::string name = name_ptr.c_str();
 
             playlist_manager::get()->playlist_enum_items(index.value(),
                                                          [&items](size_t, const metadb_handle_ptr& handle, bool)
@@ -338,7 +319,7 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
             auto result = handle_tracks(items, limit, offset, query, fields);
             auto result2 = playlist_result{result, "", ""};
             auto current_track = playlist_manager::get()->playlist_get_focus_item(index.value());
-            result2.current_track_index = -1;
+            result2.current_track_index = "-1";
             if (current_track != pfc::infinite_size)
             {
                 result2.current_track_index = std::to_string(current_track);
@@ -349,10 +330,9 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
                     result2.current_track_path = track->get_path();
                 }
             }
-            promise.set_value(result2);
+            return std::make_tuple(result2.result, result2.current_track_index, result2.current_track_path, playing, active, name);
         });
 
-    auto [result, index, path] = promise.get_future().get();
     auto [tracks, total] = result;
     return {
         {
@@ -380,27 +360,24 @@ mcp::json foobar_mcp::list_current_track_handler(const mcp::json& params, const 
         }
     }
 
-    auto promise = std::promise<mcp::json>{};
-    fb2k::inMainThreadSynchronous2(
-        [&promise, fields = std::move(fields)]
+    auto json = safe_main_thread_call(
+        [fields = std::move(fields)]
         {
             pfc::list_t<metadb_handle_ptr> items;
             auto track = metadb_handle_ptr{};
             auto playing = play_control::get()->get_now_playing(track);
             if (!playing)
             {
-                promise.set_value(nullptr);
-                return;
+                return mcp::json(nullptr);
             }
             items.add_item(track);
             auto result = handle_tracks(items, 1, 0, "", fields);
             auto json = result.tracks[0];
             json["is_playing"] = play_control::get()->is_playing() && !play_control::get()->is_paused();
             json["position_seconds"] = play_control::get()->playback_get_position();
-            promise.set_value(json);
+            return json;
         });
 
-    auto json = promise.get_future().get();
     if (json == nullptr)
     {
         return {
@@ -433,9 +410,8 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
     auto position = params.value("position", SIZE_MAX);
 
     auto paths = params["paths"].get<std::vector<std::string>>();
-    auto promise = std::promise<size_t>{};
 
-    fb2k::inMainThreadSynchronous2([paths = std::move(paths), &promise, position]()
+    auto added = safe_main_thread_call([paths = std::move(paths), position]()
     {
         auto list = pfc::list_t<metadb_handle_ptr>{};
         for (const auto& p : paths)
@@ -458,10 +434,9 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
 
         playlist_manager::get()->playlist_insert_items(playlist_manager::get()->get_active_playlist(), position, list,
                                                        bit_array_true{});
-        promise.set_value(list.get_count());
+        return list.get_count();
     });
 
-    auto added = promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -477,8 +452,7 @@ mcp::json foobar_mcp::remove_tracks_handler(const mcp::json& params, const std::
 {
     auto track_indices = params["track_indices"].get<std::set<size_t>>();
 
-    auto promise = std::promise<size_t>{};
-    fb2k::inMainThreadSynchronous2([track_indices = std::move(track_indices), &promise]()
+    auto removed = safe_main_thread_call([track_indices = std::move(track_indices)]()
     {
         auto removed = size_t{0};
         const auto mask = pfc::bit_array_lambda([&track_indices, &removed](size_t index)
@@ -488,10 +462,9 @@ mcp::json foobar_mcp::remove_tracks_handler(const mcp::json& params, const std::
             return remove;
         });
         playlist_manager::get()->playlist_remove_items(playlist_manager::get()->get_active_playlist(), mask);
-        promise.set_value(removed);
+        return removed;
     });
 
-    auto removed = promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -505,15 +478,12 @@ mcp::json foobar_mcp::remove_tracks_handler(const mcp::json& params, const std::
 
 mcp::json foobar_mcp::remove_all_tracks_handler(const mcp::json& params, const std::string& session_id)
 {
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2([&promise]()
+    safe_main_thread_call([]()
     {
         const auto mask = bit_array_true{};
         playlist_manager::get()->playlist_remove_items(playlist_manager::get()->get_active_playlist(), mask);
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -533,18 +503,15 @@ mcp::json foobar_mcp::move_tracks_handler(const mcp::json& params, const std::st
     }
 
     auto order = params["order"].get<std::vector<size_t>>();
-    auto promise = std::promise<void>{};
 
-    fb2k::inMainThreadSynchronous2([order = std::move(order), &promise]()
+    safe_main_thread_call([order = std::move(order)]()
     {
         const auto playlist_index = playlist_manager::get()->get_active_playlist();
         const auto item_count = playlist_manager::get()->playlist_get_item_count(playlist_index);
 
         if (order.size() != item_count)
         {
-            promise.set_exception(std::make_exception_ptr(
-                mcp::mcp_exception(mcp::error_code::invalid_params, "order length must match playlist length")));
-            return;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params, "order length must match playlist length");
         }
 
         std::vector seen(item_count, false);
@@ -555,19 +522,15 @@ mcp::json foobar_mcp::move_tracks_handler(const mcp::json& params, const std::st
             const auto target = order[i];
             if (target >= item_count || seen[target])
             {
-                promise.set_exception(std::make_exception_ptr(
-                    mcp::mcp_exception(mcp::error_code::invalid_params,
-                                       "order must be a valid permutation of track indices")));
-                return;
+                throw mcp::mcp_exception(mcp::error_code::invalid_params,
+                                       "order must be a valid permutation of track indices");
             }
             seen[target] = true;
             reorder[i] = target;
         }
         playlist_manager::get()->playlist_reorder_items(playlist_index, reorder.data(), item_count);
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -581,27 +544,22 @@ mcp::json foobar_mcp::move_tracks_handler(const mcp::json& params, const std::st
 
 mcp::json foobar_mcp::set_active_playlist_handler(const mcp::json& params, const std::string& session_id) const
 {
-    if (!params.contains("playlist_id"))
+    if (!params.contains("playlist_guid"))
     {
-        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id parameter is required");
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_guid parameter is required");
     }
-    auto playlist_id = params["playlist_id"].get<std::string>();
+    auto playlist_guid = params["playlist_guid"].get<std::string>();
 
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2([this, playlist_id = std::move(playlist_id), &promise]()
+    safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = m_playlist_resource->get_playlist_index(playlist_id);
+        const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
         if (!index.has_value())
         {
-            promise.set_exception(
-                std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
-            return;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
         }
         playlist_manager::get()->set_active_playlist(index.value());
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -615,28 +573,23 @@ mcp::json foobar_mcp::set_active_playlist_handler(const mcp::json& params, const
 
 mcp::json foobar_mcp::set_playing_playlist_handler(const mcp::json& params, const std::string& session_id) const
 {
-    if (!params.contains("playlist_id"))
+    if (!params.contains("playlist_guid"))
     {
-        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id parameter is required");
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_guid parameter is required");
     }
-    auto playlist_id = params["playlist_id"].get<std::string>();
+    auto playlist_guid = params["playlist_guid"].get<std::string>();
 
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2([this, playlist_id = std::move(playlist_id), &promise]()
+    safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = m_playlist_resource->get_playlist_index(playlist_id);
+        const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
         if (!index.has_value())
         {
-            promise.set_exception(
-                std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
-            return;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
         }
         playlist_manager::get()->set_active_playlist(index.value());
         playlist_manager::get()->set_playing_playlist(index.value());
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -651,7 +604,7 @@ mcp::json foobar_mcp::set_playing_playlist_handler(const mcp::json& params, cons
 mcp::json foobar_mcp::set_playback_state_handler(const mcp::json& params, const std::string& session_id)
 {
     auto state = params["state"].get<bool>();
-    fb2k::inMainThreadSynchronous2([state]()
+    safe_main_thread_call([state]()
     {
         play_control::get()->pause(state);
     });
@@ -675,21 +628,16 @@ mcp::json foobar_mcp::play_at_index_handler(const mcp::json& params, const std::
     }
     auto index = params["index"].get<size_t>();
 
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2([index, &promise]()
+    safe_main_thread_call([index]()
     {
         const auto playlist_index = playlist_manager::get()->get_active_playlist();
         if (const auto count = playlist_manager::get()->playlist_get_item_count(playlist_index); index >= count)
         {
-            promise.set_exception(std::make_exception_ptr(
-                mcp::mcp_exception(mcp::error_code::invalid_params, "Index out of bounds")));
-            return;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params, "Index out of bounds");
         }
         playlist_manager::get()->playlist_execute_default_action(playlist_index, index);
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -709,21 +657,16 @@ mcp::json foobar_mcp::set_focus_handler(const mcp::json& params, const std::stri
     }
     auto index = params["index"].get<size_t>();
 
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2([index, &promise]()
+    safe_main_thread_call([index]()
     {
         const auto playlist_index = playlist_manager::get()->get_active_playlist();
         if (const auto count = playlist_manager::get()->playlist_get_item_count(playlist_index); index >= count)
         {
-            promise.set_exception(std::make_exception_ptr(
-                mcp::mcp_exception(mcp::error_code::invalid_params, "Index out of bounds")));
-            return;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params, "Index out of bounds");
         }
         playlist_manager::get()->playlist_set_focus_item(playlist_index, index);
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -743,21 +686,19 @@ mcp::json foobar_mcp::create_playlist_handler(const mcp::json& params, const std
     }
     auto name = params["name"].get<std::string>();
 
-    auto promise = std::promise<std::string>{};
-    fb2k::inMainThreadSynchronous2([name = std::move(name), &promise]()
+    auto playlist_guid = safe_main_thread_call([name = std::move(name)]()
     {
         auto index = playlist_manager::get()->create_playlist(name.c_str(), pfc::infinite_size, pfc::infinite_size);
         playlist_manager::get()->playlist_rename(index, name.c_str(), pfc::infinite_size);
-        promise.set_value(std::to_string(index));
+        return std::to_string(index);
     });
 
-    auto playlist_id = promise.get_future().get();
     return {
         {
             {"type", "text"},
             {
                 "text",
-                std::format("Created new playlist with name '{}' and id '{}'", name, playlist_id)
+                std::format("Created new playlist with name '{}'", name)
             }
         }
     };
@@ -765,35 +706,30 @@ mcp::json foobar_mcp::create_playlist_handler(const mcp::json& params, const std
 
 mcp::json foobar_mcp::rename_playlist_handler(const mcp::json& params, const std::string& session_id)
 {
-    if (!params.contains("playlist_id") || !params.contains("new_name"))
+    if (!params.contains("playlist_guid") || !params.contains("new_name"))
     {
-        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id and new_name parameters are required");
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_guid and new_name parameters are required");
     }
-    auto playlist_id = params["playlist_id"].get<std::string>();
+    auto playlist_guid = params["playlist_guid"].get<std::string>();
     auto new_name = params["new_name"].get<std::string>();
 
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2(
-        [this, playlist_id = std::move(playlist_id), new_name = std::move(new_name), &promise]()
+    safe_main_thread_call(
+        [this, playlist_guid = std::move(playlist_guid), new_name = std::move(new_name)]()
         {
-            const auto index = m_playlist_resource->get_playlist_index(playlist_id);
+            const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
             if (!index.has_value())
             {
-                promise.set_exception(
-                    std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
-                return;
+                throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
             }
             playlist_manager::get()->playlist_rename(index.value(), new_name.c_str(), pfc::infinite_size);
-            promise.set_value();
         });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
             {
                 "text",
-                std::format("Renamed playlist '{}' to '{}'", playlist_id, new_name)
+                std::format("Renamed playlist '{}' to '{}'", playlist_guid, new_name)
             }
         }
     };
@@ -801,33 +737,28 @@ mcp::json foobar_mcp::rename_playlist_handler(const mcp::json& params, const std
 
 mcp::json foobar_mcp::delete_playlist_handler(const mcp::json& params, const std::string& session_id)
 {
-    if (!params.contains("playlist_id"))
+    if (!params.contains("playlist_guid"))
     {
-        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id parameter is required");
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_guid parameter is required");
     }
-    auto playlist_id = params["playlist_id"].get<std::string>();
+    auto playlist_guid = params["playlist_guid"].get<std::string>();
 
-    auto promise = std::promise<void>{};
-    fb2k::inMainThreadSynchronous2([this, playlist_id = std::move(playlist_id), &promise]()
+    safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = m_playlist_resource->get_playlist_index(playlist_id);
+        const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
         if (!index.has_value())
         {
-            promise.set_exception(
-                std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
-            return;
+            throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
         }
         playlist_manager::get()->remove_playlist(index.value());
-        promise.set_value();
     });
 
-    promise.get_future().get();
     return {
         {
             {"type", "text"},
             {
                 "text",
-                std::format("Deleted playlist '{}'", playlist_id)
+                std::format("Deleted playlist '{}'", playlist_guid)
             }
         }
     };

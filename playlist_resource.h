@@ -30,8 +30,8 @@ public:
     mcp::json get_metadata() const override;
     mcp::json read() const override;
     std::vector<std::chrono::steady_clock::time_point> playlist_update_times;
-    std::vector<std::string> playlist_ids;
-    std::optional<t_size> get_playlist_index(const std::string& playlist_id) const;
+    std::vector<std::string> playlist_guids;
+    std::optional<t_size> get_playlist_index(const std::string& playlist_guid) const;
 };
 
 

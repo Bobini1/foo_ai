@@ -3,6 +3,7 @@
 //
 
 #include "playlist_resource.h"
+#include "safe_main_thread_call.h"
 
 #include <future>
 
@@ -15,15 +16,17 @@ void playlist_resource::on_playlist_created(t_size p_index, const char* p_name, 
 {
     const auto guid = pfc::createGUID();
     const auto id = pfc::print_guid(guid);
-    if (p_index >= playlist_ids.size()) [[likely]]
+    if (p_index >= playlist_guids.size()) [[likely]]
     {
-        playlist_ids.resize(p_index + 1);
-        for (t_size i = playlist_ids.size() - 1; i > p_index; --i)
+        playlist_guids.resize(p_index + 1);
+        playlist_update_times.resize(p_index + 1);
+        for (t_size i = playlist_guids.size() - 1; i > p_index; --i)
         {
-            playlist_ids[i] = playlist_ids[i - 1];
+            playlist_guids[i] = playlist_guids[i - 1];
+            playlist_update_times[i] = playlist_update_times[i - 1];
         }
     }
-    playlist_ids[p_index] = id;
+    playlist_guids[p_index] = id;
     playlist_update_times[p_index] = std::chrono::steady_clock::now();
     notify_changed();
 }
@@ -35,7 +38,7 @@ void playlist_resource::on_playlists_removed(const bit_array& p_mask, t_size p_o
         if (p_mask[i])
         {
             playlist_update_times.erase(playlist_update_times.begin() + j);
-            playlist_ids.erase(playlist_ids.begin() + j);
+            playlist_guids.erase(playlist_guids.begin() + j);
         }
         else
         {
@@ -54,15 +57,15 @@ void playlist_resource::on_playlist_renamed(t_size p_index, const char* p_new_na
 void playlist_resource::on_playlists_reorder(const t_size* p_order, t_size p_count)
 {
     auto new_update_times = decltype(playlist_update_times){};
-    auto new_ids = decltype(playlist_ids){};
+    auto new_ids = decltype(playlist_guids){};
     for (t_size i = 0; i < p_count; ++i)
     {
         auto old_index = p_order[i];
         new_update_times.push_back(playlist_update_times[old_index]);
-        new_ids.push_back(playlist_ids[old_index]);
+        new_ids.push_back(playlist_guids[old_index]);
     }
     playlist_update_times = std::move(new_update_times);
-    playlist_ids = std::move(new_ids);
+    playlist_guids = std::move(new_ids);
     notify_changed();
 }
 
@@ -115,12 +118,12 @@ playlist_resource::playlist_resource() : resource("playlists://."), playlist_cal
     {
         const auto count = playlist_manager::get()->get_playlist_count();
         playlist_update_times.resize(count);
-        playlist_ids.resize(count);
+        playlist_guids.resize(count);
         for (t_size i = 0; i < count; ++i)
         {
             auto guid = pfc::createGUID();
             const auto id = pfc::print_guid(guid);
-            playlist_ids[i] = id;
+            playlist_guids[i] = id;
         }
     });
 }
@@ -142,8 +145,7 @@ mcp::json playlist_resource::get_metadata() const
 
 mcp::json playlist_resource::read() const
 {
-    auto promise = std::promise<std::vector<mcp::json>>{};
-    fb2k::inMainThreadSynchronous2([this, &promise]()
+    auto playlists = safe_main_thread_call([this]()
     {
         auto now = std::chrono::steady_clock::now();
         auto count = playlist_manager::get()->get_playlist_count();
@@ -154,8 +156,9 @@ mcp::json playlist_resource::read() const
         {
             auto lastModified = std::chrono::duration_cast<std::chrono::seconds>(
                 now - playlist_update_times[i]);
-            auto id = playlist_ids[i];
+            auto id = playlist_guids[i];
             auto name = pfc::string8{};
+            playlist_manager::get()->playlist_get_name(i, name);
             auto playlist_info = mcp::json{
                 {"id", id},
                 {"name", name.c_str()},
@@ -171,11 +174,8 @@ mcp::json playlist_resource::read() const
             };
             playlists.push_back(std::move(playlist_info));
         }
-        promise.set_value(std::move(playlists));
+        return playlists;
     });
-
-    auto future = promise.get_future();
-    auto playlists = future.get();
 
     return {
         {"uri", get_uri()},
@@ -183,12 +183,12 @@ mcp::json playlist_resource::read() const
     };
 }
 
-std::optional<t_size> playlist_resource::get_playlist_index(const std::string& playlist_id) const
+std::optional<t_size> playlist_resource::get_playlist_index(const std::string& playlist_guid) const
 {
-    auto it = std::ranges::find(playlist_ids, playlist_id);
-    if (it != playlist_ids.end())
+    auto it = std::ranges::find(playlist_guids, playlist_guid);
+    if (it != playlist_guids.end())
     {
-        return std::distance(playlist_ids.begin(), it);
+        return std::distance(playlist_guids.begin(), it);
     }
     return std::nullopt;
 }
