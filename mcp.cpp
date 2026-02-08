@@ -841,7 +841,7 @@ mcp_manager& mcp_manager::instance()
 
 void mcp_manager::start(const std::string& host, int port)
 {
-    server = std::make_unique<foobar_mcp>(host, port, playlist_resource, current_track_resource);
+    server = std::make_unique<foobar_mcp>(host, port, playlist_resource_, current_track_resource_);
 }
 
 void mcp_manager::stop()

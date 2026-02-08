@@ -10,6 +10,7 @@
 #include <cpp-mcp/mcp_server.h>
 #include <SDK/foobar2000.h>
 
+#include "current_track_resource.h"
 #include "playlist_resource.h"
 
 class current_track_resource;
@@ -44,8 +45,8 @@ public:
 class mcp_manager
 {
     std::unique_ptr<foobar_mcp> server;
-    std::shared_ptr<playlist_resource> playlist_resource;
-    std::shared_ptr<current_track_resource> current_track_resource;
+    std::shared_ptr<playlist_resource> playlist_resource_ = std::make_shared<playlist_resource>();
+    std::shared_ptr<current_track_resource> current_track_resource_ = std::make_shared<current_track_resource>();
 
 public:
     static mcp_manager& instance();
