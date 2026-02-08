@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD 26)
 add_library(foo_ai SHARED main.cpp
         Preferences.cpp
         Preferences.h
-        guid.h
         resources.h
         foo_ai.rc
         mcp.cpp
