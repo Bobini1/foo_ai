@@ -105,7 +105,7 @@ playlist_resource::playlist_resource() : resource("playlists://."), playlist_cal
 mcp::json playlist_resource::get_metadata() const
 {
     return {
-        {"uri", "playlists://."},
+        {"uri", get_uri()},
         {"name", "Playlists"},
         {
             "description",

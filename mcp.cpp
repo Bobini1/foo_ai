@@ -13,31 +13,36 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
 
     // Register the list_library tool
     const mcp::tool list_library_tool = mcp::tool_builder("list_library")
-                                  .with_description("Get tracks from the user's media library")
-                                  .with_number_param("limit", "Max tracks to return (default: 50)", false)
-                                  .with_number_param("offset", "Skip first N tracks", false)
-                                  .with_string_param("query", "foobar2000 search query (e.g. 'artist HAS beatles')",
-                                                     false)
-                                  .with_array_param("fields", "Fields to return: "
-                                                    "path, duration_seconds or any tag contained in audio files. "
-                                                    "Default: path, artist, title, album, duration_seconds", "string",
-                                                    false)
-                                  .build();
+                                        .with_description("Get tracks from the user's media library")
+                                        .with_number_param("limit", "Max tracks to return (default: 50)", false)
+                                        .with_number_param("offset", "Skip first N tracks", false)
+                                        .with_string_param(
+                                            "query", "foobar2000 search query (e.g. 'artist HAS beatles')",
+                                            false)
+                                        .with_array_param("fields", "Fields to return: "
+                                                          "path, duration_seconds or any tag contained in audio files. "
+                                                          "Default: path, artist, title, album, duration_seconds",
+                                                          "string",
+                                                          false)
+                                        .build();
 
     server.register_tool(list_library_tool, std::bind_front(&foobar_mcp::list_library_handler, this));
 
     const mcp::tool list_playlist_tool = mcp::tool_builder("list_playlist")
-                                  .with_description("Get tracks from a playlist")
-                                  .with_string_param("playlist_id", "ID of the playlist to retrieve tracks from", true)
-                                  .with_number_param("limit", "Max tracks to return (default: 50)", false)
-                                  .with_number_param("offset", "Skip first N tracks", false)
-                                  .with_string_param("query", "foobar2000 search query (e.g. 'artist HAS beatles')",
-                                                     false)
-                                  .with_array_param("fields", "Fields to return: "
-                                                    "path, duration_seconds or any tag contained in audio files. "
-                                                    "Default: path, artist, title, album, duration_seconds", "string",
-                                                    false)
-                                  .build();
+                                         .with_description("Get tracks from a playlist")
+                                         .with_string_param("playlist_id", "ID of the playlist to retrieve tracks from",
+                                                            true)
+                                         .with_number_param("limit", "Max tracks to return (default: 50)", false)
+                                         .with_number_param("offset", "Skip first N tracks", false)
+                                         .with_string_param(
+                                             "query", "foobar2000 search query (e.g. 'artist HAS beatles')",
+                                             false)
+                                         .with_array_param("fields", "Fields to return: "
+                                                           "path, duration_seconds or any tag contained in audio files. "
+                                                           "Default: path, artist, title, album, duration_seconds",
+                                                           "string",
+                                                           false)
+                                         .build();
 
     server.start(false);
 }
@@ -47,7 +52,9 @@ struct result
     mcp::json tracks;
     size_t total;
 };
-static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, int limit, int offset, std::string query, std::vector<std::string> fields)
+
+static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, int limit, int offset, std::string query,
+                            std::vector<std::string> fields)
 {
     std::promise<result> promise;
     auto future = promise.get_future();
@@ -161,6 +168,13 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
     };
 }
 
+struct playlist_result
+{
+    result result;
+    std::string current_track_index;
+    std::string current_track_path;
+};
+
 mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::string& session_id) const
 {
     if (!params.contains("playlist_id") || !params["playlist_id"].is_string())
@@ -185,35 +199,114 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
         }
     }
 
-    auto promise = std::promise<result>{};
-    fb2k::inMainThread([this, &promise, limit, offset, query = std::move(query), fields = std::move(fields), playlist_id]()
-    {
-        pfc::list_t<metadb_handle_ptr> items;
-        auto index = m_playlist_resource->get_playlist_index(playlist_id);
-        if (!index.has_value())
+    auto promise = std::promise<playlist_result>{};
+    fb2k::inMainThread(
+        [this, &promise, limit, offset, query = std::move(query), fields = std::move(fields), playlist_id]()
         {
-            promise.set_exception(std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
-            return;
-        }
-        playlist_manager::get()->playlist_enum_items(index.value(), [&items](size_t, const metadb_handle_ptr& handle, bool)
-        {
-            items.add_item(handle);
-            return true;
-        }, bit_array_true{});
-        promise.set_value(handle_tracks(items, limit, offset, query, fields));
-    });
+            pfc::list_t<metadb_handle_ptr> items;
+            auto index = m_playlist_resource->get_playlist_index(playlist_id);
+            if (!index.has_value())
+            {
+                promise.set_exception(
+                    std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
+                return;
+            }
+            playlist_manager::get()->playlist_enum_items(index.value(),
+                                                         [&items](size_t, const metadb_handle_ptr& handle, bool)
+                                                         {
+                                                             items.add_item(handle);
+                                                             return true;
+                                                         }, bit_array_true{});
+            auto result = handle_tracks(items, limit, offset, query, fields);
+            auto result2 = playlist_result{result, "", ""};
+            auto current_track = playlist_manager::get()->playlist_get_focus_item(index.value());
+            result2.current_track_index = -1;
+            if (current_track != pfc::infinite_size)
+            {
+                result2.current_track_index = std::to_string(current_track);
+                auto track = metadb_handle_ptr{};
+                if (playlist_manager::get()->playlist_get_item_handle(track, index.value(), current_track))
+                {
+                    auto info = track->get_info_ref();
+                    result2.current_track_path = track->get_path();
+                }
+            }
+            promise.set_value(result2);
+        });
 
-    auto [tracks, total] = promise.get_future().get();
+    auto [result, index, path] = promise.get_future().get();
+    auto [tracks, total] = result;
     return {
+        {
+            {"type", "text"},
+            {
+                "text",
+                std::format("Current focused track: {} (index {}), total_tracks: {}, Returned tracks: {}, tracks: {}",
+                            path.empty() ? "None" : path, index, total, tracks.size(), tracks.dump())
+            }
+        }
+    };
+}
+
+mcp::json foobar_mcp::current_track_handler(const mcp::json& params, const std::string& session_id) const
+{
+    if (!params.contains("playlist_id") || !params["playlist_id"].is_string())
+    {
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id (string) parameter is required");
+    }
+
+    std::vector<std::string> fields = {"path", "artist", "title", "album", "duration_seconds"};
+    if (params.contains("fields"))
+    {
+        fields.clear();
+        for (const auto& f : params["fields"])
+        {
+            fields.push_back(f.get<std::string>());
+        }
+    }
+
+    auto promise = std::promise<mcp::json>{};
+    fb2k::inMainThread(
+        [&promise, fields = std::move(fields)]
+        {
+            pfc::list_t<metadb_handle_ptr> items;
+            auto track = metadb_handle_ptr{};
+            auto playing = play_control::get()->get_now_playing(track);
+            if (!playing)
+            {
+                promise.set_value(nullptr);
+                return;
+            }
+            items.add_item(track);
+            auto result = handle_tracks(items, 1, 0, "", fields);
+            auto json = result.tracks[0].get<nlohmann::json::object_t>();
+            json["is_playing"] = play_control::get()->is_playing();
+            json["position_seconds"] = play_control::get()->playback_get_position();
+            promise.set_value(json);
+        });
+
+    auto json = promise.get_future().get();
+    if (json == nullptr)
+    {
+        return {
             {
                 {"type", "text"},
                 {
                     "text",
-                    std::format("total_tracks: {}, Returned tracks: {}, tracks: {}", total, tracks.size(), tracks.dump())
+                    "No track is currently selected"
                 }
             }
+        };
+    }
+    return {
+        {
+            {"type", "text"},
+            {
+                "text",
+                std::format("current track: {}", json.dump())
+            }
+        }
     };
-    return {};
 }
 
 
