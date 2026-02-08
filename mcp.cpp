@@ -48,7 +48,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
 
     server.register_tool(list_playlist_tool, std::bind_front(&foobar_mcp::list_playlist_handler, this));
 
-    auto current_track_tool = mcp::tool_builder("current_track")
+    auto current_track_tool = mcp::tool_builder("list_current_track")
                               .with_description("Get the currently playing track")
                               .with_array_param("fields", "Fields to return: "
                                                 "path, duration_seconds or any tag contained in audio files. "
@@ -57,7 +57,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                                 false)
                               .build();
 
-    server.register_tool(current_track_tool, std::bind_front(&foobar_mcp::current_track_handler, this));
+    server.register_tool(current_track_tool, std::bind_front(&foobar_mcp::list_current_track_handler, this));
 
     server.start(false);
 }
@@ -272,7 +272,7 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
     };
 }
 
-mcp::json foobar_mcp::current_track_handler(const mcp::json& params, const std::string& session_id) const
+mcp::json foobar_mcp::list_current_track_handler(const mcp::json& params, const std::string& session_id) const
 {
     if (!params.contains("playlist_id") || !params["playlist_id"].is_string())
     {
