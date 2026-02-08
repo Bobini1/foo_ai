@@ -151,7 +151,7 @@ mcp::json playlist_resource::read() const
         auto count = playlist_manager::get()->get_playlist_count();
         auto active = playlist_manager::get()->get_active_playlist();
         auto playing = playlist_manager::get()->get_playing_playlist();
-        auto playlists = std::vector<mcp::json>{};
+        auto playlists = mcp::json::array();
         for (t_size i = 0; i < count; ++i)
         {
             auto lastModified = std::chrono::duration_cast<std::chrono::seconds>(
@@ -179,7 +179,7 @@ mcp::json playlist_resource::read() const
 
     return {
         {"uri", get_uri()},
-        {"text", playlists}
+        {"text", playlists.dump()}
     };
 }
 
