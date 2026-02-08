@@ -13,7 +13,6 @@ void playlist_resource::on_playlist_activate(t_size p_old, t_size p_new)
 
 void playlist_resource::on_playlist_created(t_size p_index, const char* p_name, t_size p_name_len)
 {
-    playlist_update_times[p_index] = std::chrono::steady_clock::now();
     const auto guid = pfc::createGUID();
     const auto id = pfc::print_guid(guid);
     if (p_index >= playlist_ids.size()) [[likely]]
@@ -25,6 +24,7 @@ void playlist_resource::on_playlist_created(t_size p_index, const char* p_name, 
         }
     }
     playlist_ids[p_index] = id;
+    playlist_update_times[p_index] = std::chrono::steady_clock::now();
     notify_changed();
 }
 
