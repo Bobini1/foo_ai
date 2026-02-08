@@ -46,6 +46,19 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
                                                            false)
                                          .build();
 
+    server.register_tool(list_playlist_tool, std::bind_front(&foobar_mcp::list_playlist_handler, this));
+
+    auto current_track_tool = mcp::tool_builder("current_track")
+                              .with_description("Get the currently playing track")
+                              .with_array_param("fields", "Fields to return: "
+                                                "path, duration_seconds or any tag contained in audio files. "
+                                                "Default: path, artist, title, album",
+                                                "string",
+                                                false)
+                              .build();
+
+    server.register_tool(current_track_tool, std::bind_front(&foobar_mcp::current_track_handler, this));
+
     server.start(false);
 }
 
@@ -55,7 +68,8 @@ struct result
     size_t total;
 };
 
-static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limit, const int offset, const std::string& query,
+static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limit, const int offset,
+                            const std::string& query,
                             const std::vector<std::string>& fields)
 {
     std::promise<result> promise;
