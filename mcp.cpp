@@ -21,17 +21,22 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
         })
     });
 
-    // Register the list_library tool
+    server.register_resource(m_playlist_resource);
+    server.register_resource(m_current_track_resource);
+
     const mcp::tool list_library_tool = mcp::tool_builder("list_library")
                                         .with_description("Get tracks from the user's media library")
                                         .with_number_param("limit", "Max tracks to return (default: 50)", false)
                                         .with_number_param("offset", "Skip first N tracks", false)
                                         .with_string_param(
-                                            "query", "foobar2000 search query (e.g. 'artist HAS beatles')",
+                                            "query", "foobar2000 search query (e.g. 'artist HAS beatles') "
+                                            "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Query_syntax ",
                                             false)
                                         .with_array_param("fields", "Fields to return: "
                                                           "path, duration_seconds or any tag contained in audio files. "
-                                                          "Default: path, artist, title, album",
+                                                          "Default: path, artist, title, album. "
+                                                          "Other common tags: genre, date, composer, performer, "
+                                                          "album artist, track number, disc number, comment, subtitle",
                                                           "string",
                                                           false)
                                         .build();
