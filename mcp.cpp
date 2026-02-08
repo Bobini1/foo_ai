@@ -2,19 +2,19 @@
 #include <SDK/foobar2000.h>
 #include <future>
 
-foobar_mcp::foobar_mcp(const std::string& host, int port)
-    : server(std::make_unique<mcp::server>(mcp::server::configuration{host, port}))
+foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource)
+    : server(mcp::server::configuration{host, port}), m_playlist_resource(std::move(playlist_resource))
 {
     // Set server info and capabilities
-    server->set_server_info("foo_ai", "1.0.0");
-    server->set_capabilities({
+    server.set_server_info("foo_ai", "1.0.0");
+    server.set_capabilities({
         {"tools", mcp::json::object()}
     });
 
     // Register the list_library tool
-    mcp::tool list_library_tool = mcp::tool_builder("list_library")
+    const mcp::tool list_library_tool = mcp::tool_builder("list_library")
                                   .with_description("Get tracks from the user's media library")
-                                  .with_number_param("limit", "Max tracks to return (default: 100)", false)
+                                  .with_number_param("limit", "Max tracks to return (default: 50)", false)
                                   .with_number_param("offset", "Skip first N tracks", false)
                                   .with_string_param("query", "foobar2000 search query (e.g. 'artist HAS beatles')",
                                                      false)
@@ -22,48 +22,39 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                     "path, duration_seconds or any tag contained in audio files. "
                                                     "Default: path, artist, title, album, duration_seconds", "string",
                                                     false)
-                                  .with_string_param("sort_by", "Field to sort by", false)
-                                  .with_boolean_param("descending", "Sort descending", false)
                                   .build();
 
-    server->register_tool(list_library_tool,
-                          [this](const mcp::json& params, const std::string& session_id)
-                          {
-                              return list_library_handler(params, session_id);
-                          });
+    server.register_tool(list_library_tool, std::bind_front(&foobar_mcp::list_library_handler, this));
 
-    server->start(false);
+    const mcp::tool list_playlist_tool = mcp::tool_builder("list_playlist")
+                                  .with_description("Get tracks from a playlist")
+                                  .with_string_param("playlist_id", "ID of the playlist to retrieve tracks from", true)
+                                  .with_number_param("limit", "Max tracks to return (default: 50)", false)
+                                  .with_number_param("offset", "Skip first N tracks", false)
+                                  .with_string_param("query", "foobar2000 search query (e.g. 'artist HAS beatles')",
+                                                     false)
+                                  .with_array_param("fields", "Fields to return: "
+                                                    "path, duration_seconds or any tag contained in audio files. "
+                                                    "Default: path, artist, title, album, duration_seconds", "string",
+                                                    false)
+                                  .build();
+
+    server.start(false);
 }
 
-mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::string& session_id)
+struct result
 {
-    int limit = 100;
-    int offset = 0;
-    std::string query;
-    std::set<std::string> fields = {"path", "artist", "title", "album", "duration_seconds"};
-
-    if (params.contains("limit")) limit = params["limit"].get<int>();
-    if (params.contains("offset")) offset = params["offset"].get<int>();
-    if (params.contains("query")) query = params["query"].get<std::string>();
-    if (params.contains("fields"))
-    {
-        fields.clear();
-        for (const auto& f : params["fields"])
-        {
-            fields.insert(f.get<std::string>());
-        }
-    }
-
-    std::promise<std::pair<mcp::json, size_t>> promise;
+    mcp::json tracks;
+    size_t total;
+};
+static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, int limit, int offset, std::string query, std::vector<std::string> fields)
+{
+    std::promise<result> promise;
     auto future = promise.get_future();
 
-    fb2k::inMainThread([=, &promise]() mutable
+    fb2k::inMainThread([=, &promise, items = std::move(items)]() mutable
     {
         mcp::json tracks = mcp::json::array();
-
-        auto lib_api = library_manager::get();
-        pfc::list_t<metadb_handle_ptr> items;
-        lib_api->get_all_items(items);
 
         // Apply search filter if query provided
         if (!query.empty())
@@ -78,22 +69,11 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
                                         }),
                                         search_filter_manager_v2::KFlagSuppressNotify);
 
-                pfc::list_t<bool> results;
-                results.set_count(items.get_count());
-                filter->test_multi(items, results.get_ptr());
-                pfc::list_t<metadb_handle_ptr> filtered_items;
-                for (t_size i = 0; i < items.get_count(); ++i)
-                {
-                    if (results[i])
-                    {
-                        filtered_items.add_item(items[i]);
-                    }
-                }
-                items = std::move(filtered_items);
+                auto list = metadb_handle_list{items};
+                filter->test_multi_here(list, fb2k::noAbort);
             }
             catch (...)
             {
-                // Invalid query, use unfiltered
                 promise.set_exception(std::current_exception());
                 return;
             }
@@ -138,6 +118,38 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
 
     using namespace std::string_literals;
     auto [tracks, total] = future.get();
+    return {std::move(tracks), total};
+}
+
+mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::string& session_id)
+{
+    int limit = 50;
+    int offset = 0;
+    std::string query;
+    std::vector<std::string> fields = {"path", "artist", "title", "album", "duration_seconds"};
+
+    if (params.contains("limit")) limit = params["limit"].get<int>();
+    if (params.contains("offset")) offset = params["offset"].get<int>();
+    if (params.contains("query")) query = params["query"].get<std::string>();
+    if (params.contains("fields"))
+    {
+        fields.clear();
+        for (const auto& f : params["fields"])
+        {
+            fields.push_back(f.get<std::string>());
+        }
+    }
+
+    auto promise = std::promise<result>{};
+    fb2k::inMainThread([&promise, limit, offset, query = std::move(query), fields = std::move(fields)]()
+    {
+        const auto lib_api = library_manager::get();
+        pfc::list_t<metadb_handle_ptr> items;
+        lib_api->get_all_items(items);
+        promise.set_value(handle_tracks(items, limit, offset, query, fields));
+    });
+
+    auto [tracks, total] = promise.get_future().get();
     return {
         {
             {"type", "text"},
@@ -149,6 +161,61 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
     };
 }
 
+mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::string& session_id) const
+{
+    if (!params.contains("playlist_id") || !params["playlist_id"].is_string())
+    {
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "playlist_id (string) parameter is required");
+    }
+
+    int limit = 50;
+    int offset = 0;
+    std::string query;
+    std::vector<std::string> fields = {"path", "artist", "title", "album", "duration_seconds"};
+    auto playlist_id = params["playlist_id"].get<std::string>();
+    if (params.contains("limit")) limit = params["limit"].get<int>();
+    if (params.contains("offset")) offset = params["offset"].get<int>();
+    if (params.contains("query")) query = params["query"].get<std::string>();
+    if (params.contains("fields"))
+    {
+        fields.clear();
+        for (const auto& f : params["fields"])
+        {
+            fields.push_back(f.get<std::string>());
+        }
+    }
+
+    auto promise = std::promise<result>{};
+    fb2k::inMainThread([this, &promise, limit, offset, query = std::move(query), fields = std::move(fields), playlist_id]()
+    {
+        pfc::list_t<metadb_handle_ptr> items;
+        auto index = m_playlist_resource->get_playlist_index(playlist_id);
+        if (!index.has_value())
+        {
+            promise.set_exception(std::make_exception_ptr(mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found")));
+            return;
+        }
+        playlist_manager::get()->playlist_enum_items(index.value(), [&items](size_t, const metadb_handle_ptr& handle, bool)
+        {
+            items.add_item(handle);
+            return true;
+        }, bit_array_true{});
+        promise.set_value(handle_tracks(items, limit, offset, query, fields));
+    });
+
+    auto [tracks, total] = promise.get_future().get();
+    return {
+            {
+                {"type", "text"},
+                {
+                    "text",
+                    std::format("total_tracks: {}, Returned tracks: {}, tracks: {}", total, tracks.size(), tracks.dump())
+                }
+            }
+    };
+    return {};
+}
+
 
 mcp_manager& mcp_manager::instance()
 {
@@ -158,12 +225,12 @@ mcp_manager& mcp_manager::instance()
 
 void mcp_manager::start(const std::string& host, int port)
 {
-    m_server = std::make_unique<foobar_mcp>(host, port);
+    server = std::make_unique<foobar_mcp>(host, port, playlist_resource);
 }
 
 void mcp_manager::stop()
 {
-    m_server.reset();
+    server.reset();
 }
 
 void mcp_manager::restart(const std::string& host, int port)

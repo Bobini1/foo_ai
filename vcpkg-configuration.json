@@ -3,7 +3,7 @@
   "default-registry": {
     "kind": "git",
     "repository": "https://github.com/Bobini1/vcpkg",
-    "baseline": "3dea9590f401e38dcc4e5672829a28cf8ed92e39"
+    "baseline": "7b369737c4c5fa61db250a7a542f9f8bca17be9b"
   },
   "overlay-ports": [
     "./vcpkg-overlay"

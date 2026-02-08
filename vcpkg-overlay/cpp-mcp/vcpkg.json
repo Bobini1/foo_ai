@@ -14,7 +14,7 @@
       "host": true
     },
     "nlohmann-json",
-    "base64",
+    "terrakuh-base64",
     "cpp-httplib"
   ]
 }

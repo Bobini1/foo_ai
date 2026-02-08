@@ -8,19 +8,26 @@
 #include <memory>
 #include <string>
 #include <cpp-mcp/mcp_server.h>
+#include <SDK/foobar2000.h>
+
+#include "playlist_resource.h"
 
 class foobar_mcp
 {
-    std::unique_ptr<mcp::server> server;
+    mcp::server server;
+    std::shared_ptr<playlist_resource> m_playlist_resource;
+
     mcp::json list_library_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json list_playlist_handler(const mcp::json& params, const std::string& session_id) const;
 
 public:
-    foobar_mcp(const std::string& host, int port);
+    foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource);
 };
 
 class mcp_manager
 {
-    std::unique_ptr<foobar_mcp> m_server;
+    std::unique_ptr<foobar_mcp> server;
+    std::shared_ptr<playlist_resource> playlist_resource;
 
 public:
     static mcp_manager& instance();
