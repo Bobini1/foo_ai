@@ -124,7 +124,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
 
     auto add_tracks_tool = mcp::tool_builder("add_tracks")
                            .with_description("Add filesystem tracks to the active playlist")
-                           .with_array_param("paths", "Absolute file paths to add", "string", true)
+                           .with_array_param("uris", "Absolute file uris to add", "string", true)
                            .with_number_param("position", "Index to insert at (default: append)", false)
                            .build();
     server.register_tool(add_tracks_tool, std::bind_front(&foobar_mcp::add_tracks_handler, this));
@@ -433,19 +433,19 @@ mcp::json foobar_mcp::list_current_track_handler(const mcp::json& params, const 
 
 mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::string& session_id)
 {
-    if (!params.contains("paths"))
+    if (!params.contains("uris"))
     {
-        throw mcp::mcp_exception(mcp::error_code::invalid_params, "paths parameter is required");
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "uris parameter is required");
     }
     auto position = params.value("position", SIZE_MAX);
 
-    auto paths = params["paths"].get<std::vector<std::string>>();
-    auto paths_size = paths.size();
+    auto uris = params["uris"].get<std::vector<std::string>>();
+    auto uris_size = uris.size();
 
-    auto added = safe_main_thread_call([paths = std::move(paths), position]()
+    auto added = safe_main_thread_call([uris = std::move(uris), position]()
     {
         auto list = pfc::list_t<metadb_handle_ptr>{};
-        for (const auto& p : paths)
+        for (const auto& p : uris)
         {
             metadb_handle_ptr handle;
             metadb::get()->handle_create(handle, make_playable_location(p.c_str(), 0));
@@ -473,7 +473,7 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
             {"type", "text"},
             {
                 "text",
-                std::format("Added {} tracks to the active playlist ({} failed)", added, paths_size - added)
+                std::format("Added {} tracks to the active playlist ({} failed)", added, uris_size - added)
             }
         }
     };
@@ -642,10 +642,16 @@ mcp::json foobar_mcp::set_playback_state_handler(const mcp::json& params, const 
         auto playing = play_control::get()->get_now_playing(track);
         if (!playing) {
             auto active_playlist = playlist_manager::get()->get_active_playlist();
-            if (active_playlist != pfc::infinite_size)
+            auto focus_item = playlist_manager::get()->playlist_get_focus_item(active_playlist);
+            if (focus_item == pfc::infinite_size)
             {
-                playlist_manager::get()->set_playing_playlist(active_playlist);
+                focus_item = 0;
             }
+            auto count = playlist_manager::get()->playlist_get_item_count(active_playlist);
+            if (count == 0)            {
+                throw mcp::mcp_exception(mcp::error_code::invalid_params, "Active playlist is empty, cannot start playback");
+            }
+            playlist_manager::get()->activeplaylist_execute_default_action(focus_item);
         } else
         {
             play_control::get()->pause(!state);
@@ -673,12 +679,11 @@ mcp::json foobar_mcp::play_at_index_handler(const mcp::json& params, const std::
 
     safe_main_thread_call([index]()
     {
-        const auto playlist_index = playlist_manager::get()->get_active_playlist();
-        if (const auto count = playlist_manager::get()->playlist_get_item_count(playlist_index); index >= count)
+        if (const auto count = playlist_manager::get()->activeplaylist_get_item_count(); index >= count)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Index out of bounds");
         }
-        playlist_manager::get()->playlist_execute_default_action(playlist_index, index);
+        playlist_manager::get()->activeplaylist_execute_default_action(index);
     });
 
     return {
@@ -702,12 +707,11 @@ mcp::json foobar_mcp::set_focus_handler(const mcp::json& params, const std::stri
 
     safe_main_thread_call([index]()
     {
-        const auto playlist_index = playlist_manager::get()->get_active_playlist();
-        if (const auto count = playlist_manager::get()->playlist_get_item_count(playlist_index); index >= count)
+        if (const auto count = playlist_manager::get()->activeplaylist_get_item_count(); index >= count)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Index out of bounds");
         }
-        playlist_manager::get()->playlist_set_focus_item(playlist_index, index);
+        playlist_manager::get()->activeplaylist_set_focus_item(index);
     });
 
     return {
