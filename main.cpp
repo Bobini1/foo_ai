@@ -2,7 +2,7 @@
 
 DECLARE_COMPONENT_VERSION(
   "foo_ai",
-  "0.0.1",
-  "AI functions for foobar.\n"
-  "See http://yirkha.fud.cz/progs/foobar2000/tutorial.php"
+  "1.0.0",
+  "AI MCP control for foobar2000.\n"
+  "Control your music player with an AI assistant!"
 );
