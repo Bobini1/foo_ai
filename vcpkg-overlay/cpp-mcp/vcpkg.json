@@ -15,6 +15,7 @@
     },
     "nlohmann-json",
     "terrakuh-base64",
-    "cpp-httplib"
+    "cpp-httplib",
+    "spdlog"
   ]
 }
