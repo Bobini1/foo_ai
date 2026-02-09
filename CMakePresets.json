@@ -14,7 +14,8 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows-static",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_CXX_FLAGS_INIT": "/D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00"
       }
     },
     {
@@ -23,8 +24,7 @@
       "description": "Build for x86 architecture",
       "architecture": "Win32",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x86-windows-static",
-        "CMAKE_CXX_FLAGS_INIT": "/D_WIN32_WINNT=0x0A00 /DWINVER=0x0A00"
+        "VCPKG_TARGET_TRIPLET": "x86-windows-static"
       }
     }
   ],
