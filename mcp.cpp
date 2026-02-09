@@ -3,8 +3,16 @@
 #include <SDK/foobar2000.h>
 #include <spdlog/spdlog.h>
 
+static mcp::server::configuration get_configuration(const std::string& host, int port)
+{
+    auto config = mcp::server::configuration{};
+    config.host = host;
+    config.port = port;
+    return config;
+}
+
 foobar_mcp::foobar_mcp(const std::string& host, int port)
-    : server(mcp::server::configuration{host, port})
+    : server(get_configuration(host, port))
 {
     server.set_server_info("foo_ai", "1.0.0");
     server.set_capabilities({
