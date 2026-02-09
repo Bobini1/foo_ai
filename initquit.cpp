@@ -6,7 +6,7 @@
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/pattern_formatter.h>
 #include "mcp.h"
-#include "Preferences.h"
+#include "preferences.h"
 
 class foobar_sink : public spdlog::sinks::base_sink<std::mutex>
 {

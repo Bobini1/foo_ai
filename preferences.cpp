@@ -265,7 +265,6 @@ const char* preferences_page_myimpl::get_name()
 
 GUID preferences_page_myimpl::get_guid()
 {
-    // This is our GUID. Replace with your own when reusing the code.
     return GUID{0xb90d1b13, 0xcb44, 0x4dbb, {0xb3, 0xce, 0x60, 0x98, 0xae, 0x54, 0x7a, 0xe4}};
 }
 

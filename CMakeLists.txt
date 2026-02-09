@@ -4,8 +4,8 @@ project(foobar_ai)
 set(CMAKE_CXX_STANDARD 26)
 
 add_library(foo_ai SHARED main.cpp
-        Preferences.cpp
-        Preferences.h
+        preferences.cpp
+        preferences.h
         resources.h
         foo_ai.rc
         mcp.cpp
