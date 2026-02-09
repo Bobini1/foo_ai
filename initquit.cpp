@@ -52,11 +52,15 @@ class myinitquit : public initquit
 public:
     void on_init() override
     {
-        spdlog::set_level(spdlog::level::info);
-        auto logger = std::make_shared<spdlog::logger>("foobar_ai", std::make_shared<foobar_sink>());
+#ifdef _DEBUG
+        spdlog::set_level(spdlog::level::debug);
+#else
+        spdlog::set_level(spdlog::level::error);
+#endif
+        const auto logger = std::make_shared<spdlog::logger>("foobar_ai", std::make_shared<foobar_sink>());
 
         // Set formatter without newline at the end
-        auto f = std::make_unique<spdlog::pattern_formatter>("[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] %v", spdlog::pattern_time_type::local, "");
+        auto f = std::make_unique<spdlog::pattern_formatter>("[%n] [%Y-%m-%d %H:%M:%S.%e] [%l] %v", spdlog::pattern_time_type::local, "");
         logger->set_formatter(std::move(f));
 
         spdlog::set_default_logger(logger);
