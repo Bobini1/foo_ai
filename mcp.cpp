@@ -638,7 +638,18 @@ mcp::json foobar_mcp::set_playback_state_handler(const mcp::json& params, const 
     auto state = params["state"].get<bool>();
     safe_main_thread_call([state]()
     {
-        play_control::get()->pause(state);
+        auto track = metadb_handle_ptr{};
+        auto playing = play_control::get()->get_now_playing(track);
+        if (!playing) {
+            auto active_playlist = playlist_manager::get()->get_active_playlist();
+            if (active_playlist != pfc::infinite_size)
+            {
+                playlist_manager::get()->set_playing_playlist(active_playlist);
+            }
+        } else
+        {
+            play_control::get()->pause(!state);
+        }
     });
 
     return {
