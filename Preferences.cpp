@@ -190,6 +190,8 @@ void CMyPreferences::apply()
 
     restart_mcp_server();
 
+    uSetDlgItemText(*this, IDC_EDIT_ENDPOINT, endpoint);
+
     OnChanged();
     //our dialog content has not changed but the flags have - our currently shown values now match the settings so the apply button can be disabled
 }
