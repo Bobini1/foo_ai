@@ -54,9 +54,12 @@ IDD_PREFERENCES DIALOGEX 0, 0, 320, 200
 STYLE DS_SETFONT | DS_FIXEDSYS | WS_CHILD | WS_VISIBLE
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
-    LTEXT           "AI Endpoint URL:",IDC_STATIC,12,12,70,8,WS_VISIBLE
-    EDITTEXT        IDC_EDIT_ENDPOINT,12,24,296,14,ES_AUTOHSCROLL | WS_VISIBLE
-    LTEXT           "Enter the URL for your AI service endpoint.",IDC_STATIC,12,44,200,8,WS_VISIBLE
+    CONTROL         "Enable MCP Server",IDC_CHECK_ENABLE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,12,12,296,10
+    LTEXT           "AI Endpoint host and port:",IDC_STATIC,12,28,150,8,WS_VISIBLE
+    EDITTEXT        IDC_EDIT_ENDPOINT,12,40,296,14,ES_AUTOHSCROLL | WS_VISIBLE
+    LTEXT           "Enter the HOST:PORT for your AI service endpoint.",IDC_STATIC,12,60,296,8,WS_VISIBLE
+    LTEXT           "SSE Endpoint:",IDC_STATIC,12,80,150,8,WS_VISIBLE
+    LTEXT           "",IDC_TEXT_SSE_URL,12,92,296,8,WS_VISIBLE | SS_NOPREFIX
 END
 
 /////////////////////////////////////////////////////////////////////////////

@@ -65,26 +65,8 @@ public:
 
         spdlog::set_default_logger(logger);
 
-        pfc::string8 endpoint;
-        foo_ai::get_endpoint(endpoint);
-
-        // Parse host:port from endpoint
-        std::string ep(endpoint.c_str());
-        std::string host = "localhost";
-        int port = 12345;
-
-        auto colon = ep.find(':');
-        if (colon != std::string::npos)
-        {
-            host = ep.substr(0, colon);
-            port = std::stoi(ep.substr(colon + 1));
-        }
-        else if (!ep.empty())
-        {
-            host = ep;
-        }
-
-        mcp_manager::instance().start(host, port);
+        // Start server if enabled
+        foo_ai::restart_mcp_server();
     }
 
     void on_quit() override

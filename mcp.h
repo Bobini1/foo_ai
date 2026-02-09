@@ -49,7 +49,6 @@ public:
     static mcp_manager& instance();
     void start(const std::string& host, int port);
     void stop();
-    void restart(const std::string& host, int port);
 };
 
 #endif //FOOBAR_AI_MCP_H

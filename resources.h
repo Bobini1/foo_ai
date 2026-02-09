@@ -7,5 +7,7 @@
 
 #define IDD_PREFERENCES     1001
 #define IDC_EDIT_ENDPOINT   1002
+#define IDC_CHECK_ENABLE    1003
+#define IDC_TEXT_SSE_URL    1004
 
 #endif //FOOBAR_AI_RESOURCES_H

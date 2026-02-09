@@ -1,6 +1,7 @@
 #include "mcp.h"
 #include "safe_main_thread_call.h"
 #include <SDK/foobar2000.h>
+#include <spdlog/spdlog.h>
 
 foobar_mcp::foobar_mcp(const std::string& host, int port)
     : server(mcp::server::configuration{host, port})
@@ -783,16 +784,17 @@ mcp_manager& mcp_manager::instance()
 
 void mcp_manager::start(const std::string& host, int port)
 {
-    server = std::make_unique<foobar_mcp>(host, port);
+    try
+    {
+        server = std::make_unique<foobar_mcp>(host, port);
+    } catch (const std::exception& e)
+    {
+        spdlog::error("Failed to start MCP server: {}", e.what());
+        server = nullptr;
+    }
 }
 
 void mcp_manager::stop()
 {
     server.reset();
-}
-
-void mcp_manager::restart(const std::string& host, int port)
-{
-    stop();
-    start(host, port);
 }

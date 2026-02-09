@@ -9,6 +9,7 @@
 #include <helpers/DarkMode.h>
 
 #include <utility>
+#include <spdlog/spdlog.h>
 
 #include "mcp.h"
 
@@ -26,39 +27,67 @@ static constexpr GUID guid_IDC_editEndpoint = {
     0xbd5c777, 0x735c, 0x440d, {0x8c, 0x71, 0x49, 0xb6, 0xac, 0xff, 0xce, 0xb8}
 };
 
+static constexpr GUID guid_IDC_checkEnable = {
+    0x482465a5, 0x7ab6, 0x42ee, {0xb8, 0x1a, 0x53, 0xe4, 0x6f, 0x56, 0xa2, 0xb6}
+};
+
 // defaults
-static constexpr char cfg_editEndpoint[] = "localhost";
+static constexpr char cfg_editEndpoint[] = "localhost:9910";
+static constexpr bool cfg_checkEnable = true;
 
 namespace foo_ai
 {
     cfg_var_modern::cfg_string IDC_editEndpoint(guid_IDC_editEndpoint, cfg_editEndpoint);
+    cfg_var_modern::cfg_bool IDC_checkEnable(guid_IDC_checkEnable, cfg_checkEnable);
 
     void get_endpoint(pfc::string_base& out)
     {
         IDC_editEndpoint.get(out);
     }
 
+    bool is_server_enabled()
+    {
+        return IDC_checkEnable.get();
+    }
+
     void restart_mcp_server()
     {
+        if (!is_server_enabled())
+        {
+            mcp_manager::instance().stop();
+            return;
+        }
+
         pfc::string8 endpoint;
         get_endpoint(endpoint);
 
         std::string ep(endpoint.c_str());
         std::string host = "localhost";
-        int port = 12345;
+        int port = 9910;
 
         auto colon = ep.find(':');
         if (colon != std::string::npos)
         {
             host = ep.substr(0, colon);
-            port = std::stoi(ep.substr(colon + 1));
+            try
+            {
+                port = std::stoi(ep.substr(colon + 1));
+            } catch (const std::exception&)
+            {
+                spdlog::error("Invalid port number in endpoint configuration: '{}'", ep.substr(colon + 1));
+            }
         }
         else if (!ep.empty())
         {
             host = ep;
         }
+        if (port < 1 || port > 65535)
+        {
+            spdlog::error("Port number out of range in endpoint configuration: {}", port);
+            port = 9910;
+        }
 
-        mcp_manager::instance().restart(host, port);
+        mcp_manager::instance().start(host, port);
     }
 }
 
@@ -89,13 +118,16 @@ public:
     BEGIN_MSG_MAP_EX(CMyPreferences)
         MSG_WM_INITDIALOG(OnInitDialog)
         COMMAND_HANDLER_EX(IDC_EDIT_ENDPOINT, EN_CHANGE, OnEditChange)
+        COMMAND_HANDLER_EX(IDC_CHECK_ENABLE, BN_CLICKED, OnCheckboxChange)
     END_MSG_MAP()
 
 private:
     BOOL OnInitDialog(CWindow, LPARAM);
     void OnEditChange(UINT, int, CWindow);
+    void OnCheckboxChange(UINT, int, CWindow);
     bool HasChanged() const;
     void OnChanged();
+    pfc::string8 UpdateSSEUrl();
 
     const preferences_page_callback::ptr m_callback;
 
@@ -112,12 +144,24 @@ BOOL CMyPreferences::OnInitDialog(CWindow, LPARAM)
     auto string = pfc::string_formatter();
     IDC_editEndpoint.get(string);
     uSetDlgItemText(*this, IDC_EDIT_ENDPOINT, string);
+
+    // Set checkbox state
+    uButton_SetCheck(*this, IDC_CHECK_ENABLE, IDC_checkEnable.get());
+
+    // Update SSE URL display
+    UpdateSSEUrl();
+
     return FALSE;
 }
 
 void CMyPreferences::OnEditChange(UINT, int, CWindow)
 {
     // not much to do here
+    OnChanged();
+}
+
+void CMyPreferences::OnCheckboxChange(UINT, int, CWindow)
+{
     OnChanged();
 }
 
@@ -132,14 +176,17 @@ t_uint32 CMyPreferences::get_state()
 void CMyPreferences::reset()
 {
     uSetDlgItemText(*this, IDC_EDIT_ENDPOINT, cfg_editEndpoint);
+    uButton_SetCheck(*this, IDC_CHECK_ENABLE, cfg_checkEnable);
     OnChanged();
 }
 
 void CMyPreferences::apply()
 {
-    pfc::string8 endpoint;
-    uGetDlgItemText(*this, IDC_EDIT_ENDPOINT, endpoint);
+    const auto endpoint = UpdateSSEUrl();
     IDC_editEndpoint = endpoint;
+
+    // Save checkbox state
+    IDC_checkEnable = uButton_GetCheck(*this, IDC_CHECK_ENABLE) != 0;
 
     restart_mcp_server();
 
@@ -151,14 +198,51 @@ bool CMyPreferences::HasChanged() const
 {
     pfc::string8 endpoint;
     uGetDlgItemText(*this, IDC_EDIT_ENDPOINT, endpoint);
+    bool checkEnabled = uButton_GetCheck(*this, IDC_CHECK_ENABLE) != 0;
     //returns whether our dialog content is different from the current configuration (whether the apply button should be enabled or not)
-    return endpoint != IDC_editEndpoint;
+    return endpoint != IDC_editEndpoint || checkEnabled != IDC_checkEnable.get();
 }
 
 void CMyPreferences::OnChanged()
 {
     //tell the host that our state has changed to enable/disable the apply button appropriately.
     m_callback->on_state_changed();
+}
+
+pfc::string8 CMyPreferences::UpdateSSEUrl()
+{
+    pfc::string8 endpoint;
+    uGetDlgItemText(*this, IDC_EDIT_ENDPOINT, endpoint);
+
+    std::string ep(endpoint.c_str());
+    std::string host = "localhost";
+    int port = 9910;
+
+    auto colon = ep.find(':');
+    if (colon != std::string::npos)
+    {
+        host = ep.substr(0, colon);
+        try
+        {
+            port = std::stoi(ep.substr(colon + 1));
+        } catch (const std::exception&)
+        {
+            spdlog::error("Invalid port number in endpoint configuration: '{}'", ep.substr(colon + 1));
+        }
+    }
+    else if (!ep.empty())
+    {
+        host = ep;
+    }
+    if (port < 1 || port > 65535)
+    {
+        spdlog::error("Port number out of range in endpoint configuration: {}", port);
+        port = 9910;
+    }
+
+    std::string sseUrl = "http://" + host + ":" + std::to_string(port) + "/sse";
+    uSetDlgItemText(*this, IDC_TEXT_SSE_URL, sseUrl.c_str());
+    return (host + ":" + std::to_string(port)).c_str();
 }
 
 class preferences_page_myimpl : public preferences_page_impl<CMyPreferences>
