@@ -66,7 +66,6 @@ void playlist_resource::on_playlists_reorder(const t_size* p_order, t_size p_cou
     }
     playlist_update_times = std::move(new_update_times);
     playlist_guids = std::move(new_ids);
-    notify_changed();
 }
 
 void playlist_resource::on_items_reordered(t_size p_playlist, const t_size* p_order, t_size p_count)
