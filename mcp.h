@@ -18,8 +18,8 @@ class current_track_resource;
 class foobar_mcp
 {
     mcp::server server;
-    std::shared_ptr<playlist_resource> m_playlist_resource;
-    std::shared_ptr<current_track_resource> m_current_track_resource;
+    std::shared_ptr<playlist_resource> playlist_resource_ = std::make_shared<playlist_resource>();
+    std::shared_ptr<current_track_resource> current_track_resource_ = std::make_shared<current_track_resource>();
 
     mcp::json list_library_handler(const mcp::json& params, const std::string& session_id);
     mcp::json list_playlist_handler(const mcp::json& params, const std::string& session_id) const;
@@ -38,15 +38,12 @@ class foobar_mcp
     mcp::json delete_playlist_handler(const mcp::json& params, const std::string& session_id);
 
 public:
-    foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource,
-               std::shared_ptr<current_track_resource> current_track_resource);
+    foobar_mcp(const std::string& host, int port);
 };
 
 class mcp_manager
 {
     std::unique_ptr<foobar_mcp> server;
-    std::shared_ptr<playlist_resource> playlist_resource_ = std::make_shared<playlist_resource>();
-    std::shared_ptr<current_track_resource> current_track_resource_ = std::make_shared<current_track_resource>();
 
 public:
     static mcp_manager& instance();

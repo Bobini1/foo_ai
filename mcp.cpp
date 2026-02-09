@@ -2,10 +2,8 @@
 #include "safe_main_thread_call.h"
 #include <SDK/foobar2000.h>
 
-foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playlist_resource> playlist_resource,
-                       std::shared_ptr<current_track_resource> current_track_resource)
-    : server(mcp::server::configuration{host, port}), m_playlist_resource(std::move(playlist_resource)),
-      m_current_track_resource(std::move(current_track_resource))
+foobar_mcp::foobar_mcp(const std::string& host, int port)
+    : server(mcp::server::configuration{host, port})
 {
     server.set_server_info("foo_ai", "1.0.0");
     server.set_capabilities({
@@ -19,8 +17,8 @@ foobar_mcp::foobar_mcp(const std::string& host, int port, std::shared_ptr<playli
         })
     });
 
-    server.register_resource(m_playlist_resource);
-    server.register_resource(m_current_track_resource);
+    server.register_resource(playlist_resource_);
+    server.register_resource(current_track_resource_);
 
     const mcp::tool list_library_tool = mcp::tool_builder("list_library")
                                         .with_description("Get tracks from the user's media library")
@@ -309,7 +307,7 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
         [this, limit, offset, query = std::move(query), fields = std::move(fields), playlist_guid]()
         {
             pfc::list_t<metadb_handle_ptr> items;
-            auto index = m_playlist_resource->get_playlist_index(playlist_guid);
+            auto index = playlist_resource_->get_playlist_index(playlist_guid);
             if (!index.has_value())
             {
                 throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -565,7 +563,7 @@ mcp::json foobar_mcp::set_active_playlist_handler(const mcp::json& params, const
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
+        const auto index = playlist_resource_->get_playlist_index(playlist_guid);
         if (!index.has_value())
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -594,7 +592,7 @@ mcp::json foobar_mcp::set_playing_playlist_handler(const mcp::json& params, cons
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
+        const auto index = playlist_resource_->get_playlist_index(playlist_guid);
         if (!index.has_value())
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -729,7 +727,7 @@ mcp::json foobar_mcp::rename_playlist_handler(const mcp::json& params, const std
     safe_main_thread_call(
         [this, playlist_guid = std::move(playlist_guid), new_name = std::move(new_name)]()
         {
-            const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
+            const auto index = playlist_resource_->get_playlist_index(playlist_guid);
             if (!index.has_value())
             {
                 throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -758,7 +756,7 @@ mcp::json foobar_mcp::delete_playlist_handler(const mcp::json& params, const std
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = m_playlist_resource->get_playlist_index(playlist_guid);
+        const auto index = playlist_resource_->get_playlist_index(playlist_guid);
         if (!index.has_value())
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -785,7 +783,7 @@ mcp_manager& mcp_manager::instance()
 
 void mcp_manager::start(const std::string& host, int port)
 {
-    server = std::make_unique<foobar_mcp>(host, port, playlist_resource_, current_track_resource_);
+    server = std::make_unique<foobar_mcp>(host, port);
 }
 
 void mcp_manager::stop()
