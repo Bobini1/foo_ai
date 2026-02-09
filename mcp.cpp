@@ -2,6 +2,106 @@
 #include "safe_main_thread_call.h"
 #include <SDK/foobar2000.h>
 #include <spdlog/spdlog.h>
+#include <pfc/unicode-normalize.h>
+
+#include <string>
+
+namespace
+{
+    std::wstring utf8_to_utf16(const std::string& s)
+    {
+        if (s.empty()) return {};
+        const int len = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0);
+        if (len <= 0) return {};
+        std::wstring result(len, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), result.data(), len);
+        return result;
+    }
+
+    std::string utf16_to_utf8(const std::wstring& s)
+    {
+        if (s.empty()) return {};
+        const int len = WideCharToMultiByte(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), nullptr, 0, nullptr,
+                                            nullptr);
+        if (len <= 0) return {};
+        std::string result(len, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, s.c_str(), static_cast<int>(s.size()), result.data(), len, nullptr, nullptr);
+        return result;
+    }
+
+    bool potential_normalization_issue(const std::string& utf8_str)
+    {
+        auto nfc = pfc::unicodeNormalizeC(utf8_str.c_str());
+        auto nfd = pfc::unicodeNormalizeD(utf8_str.c_str());
+
+        // If NFC and NFD differ, there's a potential normalization issue
+        return nfc != nfd;
+    }
+
+    std::wstring get_actual_path(const std::wstring& inputPath)
+    {
+        // Open handle; for dirs FILE_FLAG_BACKUP_SEMANTICS is required.
+        HANDLE h = CreateFileW(
+            inputPath.c_str(),
+            0, // no access needed to query metadata
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            nullptr);
+
+        if (h == INVALID_HANDLE_VALUE)
+        {
+            throw std::runtime_error("CreateFileW failed");
+        }
+
+        DWORD flags = FILE_NAME_NORMALIZED; // request normalized name
+        // You may also use VOLUME_NAME_DOS to get "C:\..." form (often with \\?\ prefix).
+        flags |= VOLUME_NAME_DOS;
+
+        DWORD needed = GetFinalPathNameByHandleW(h, nullptr, 0, flags);
+        if (needed == 0)
+        {
+            CloseHandle(h);
+            throw std::runtime_error("GetFinalPathNameByHandleW size query failed");
+        }
+
+        std::wstring out(needed, L'\0');
+        DWORD written = GetFinalPathNameByHandleW(h, &out[0], needed, flags);
+        CloseHandle(h);
+
+        if (written == 0)
+        {
+            throw std::runtime_error("GetFinalPathNameByHandleW failed");
+        }
+
+        // written does not necessarily include the trailing null in a convenient way
+        out.resize(written);
+
+        // Common: result begins with "\\?\"
+        // If you want a normal Win32 path, you can optionally strip it when safe:
+        // if (out.rfind(L"\\\\?\\", 0) == 0) out = out.substr(4);
+
+        return out;
+    }
+}
+
+std::optional<std::string> resolve_filesystem_path(const std::string& utf8_path)
+{
+    std::wstring wpath = utf8_to_utf16(utf8_path);
+    if (wpath.empty()) return std::nullopt;
+
+    try
+    {
+        auto normalized_path = get_actual_path(wpath);
+        return utf16_to_utf8(normalized_path);
+    }
+    catch (const std::exception& e)
+    {
+        spdlog::error("Failed to resolve path '{}': {}", utf8_path, e.what());
+        return std::nullopt;
+    }
+}
 
 static mcp::server::configuration get_configuration(const std::string& host, int port)
 {
@@ -455,8 +555,46 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
         auto list = pfc::list_t<metadb_handle_ptr>{};
         for (const auto& p : uris)
         {
+            std::string path = p;
+
+            // Check if path starts with file:// or has no protocol and contains unicode
+            bool is_file_uri = path.starts_with("file://");
+            bool has_no_protocol = path.find("://") == std::string::npos;
+            bool can_have_norm_issue = potential_normalization_issue(path);
+
+            if ((is_file_uri || has_no_protocol) && can_have_norm_issue)
+            {
+                std::string filesystem_path = path;
+
+                // Remove file:// prefix if present
+                if (is_file_uri)
+                {
+                    filesystem_path = path.substr(7);
+                }
+
+                auto c_path = reinterpret_cast<const char8_t*>(filesystem_path.c_str());
+                auto normalized_c = pfc::unicodeNormalizeC(filesystem_path.c_str());
+                auto normalized_d = pfc::unicodeNormalizeD(filesystem_path.c_str());
+                if (auto resolved = std::filesystem::path(c_path); exists(resolved))
+                {
+                }
+                else if (auto resolved = std::filesystem::path(reinterpret_cast<const char8_t*>(normalized_c.c_str())); exists(resolved))
+                {
+                    path = normalized_c.c_str();
+                }
+                else if (auto resolved = std::filesystem::path(reinterpret_cast<const char8_t*>(normalized_d.c_str())); exists(resolved))
+                {
+                    path = normalized_d.c_str();
+                }
+                else
+                {
+                    spdlog::error("Failed to resolve path: {}", path);
+                    continue;
+                }
+            }
+
             metadb_handle_ptr handle;
-            metadb::get()->handle_create(handle, make_playable_location(p.c_str(), 0));
+            metadb::get()->handle_create(handle, make_playable_location(path.c_str(), 0));
             if (handle.is_valid())
             {
                 list.add_item(handle);
@@ -466,9 +604,7 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
         if (list.get_count() > 0)
         {
             metadb_io_v2::get()->load_info_async(list, metadb_io::load_info_default, nullptr, 0,
-                                                 fb2k::makeCompletionNotify([](unsigned)
-                                                 {
-                                                 }));
+                                                 nullptr);
         }
 
         playlist_manager::get()->playlist_insert_items(playlist_manager::get()->get_active_playlist(), position, list,
@@ -648,7 +784,8 @@ mcp::json foobar_mcp::set_playback_state_handler(const mcp::json& params, const 
     {
         auto track = metadb_handle_ptr{};
         auto playing = play_control::get()->get_now_playing(track);
-        if (!playing) {
+        if (!playing)
+        {
             auto active_playlist = playlist_manager::get()->get_active_playlist();
             auto focus_item = playlist_manager::get()->playlist_get_focus_item(active_playlist);
             if (focus_item == pfc::infinite_size)
@@ -656,11 +793,14 @@ mcp::json foobar_mcp::set_playback_state_handler(const mcp::json& params, const 
                 focus_item = 0;
             }
             auto count = playlist_manager::get()->playlist_get_item_count(active_playlist);
-            if (count == 0)            {
-                throw mcp::mcp_exception(mcp::error_code::invalid_params, "Active playlist is empty, cannot start playback");
+            if (count == 0)
+            {
+                throw mcp::mcp_exception(mcp::error_code::invalid_params,
+                                         "Active playlist is empty, cannot start playback");
             }
             playlist_manager::get()->activeplaylist_execute_default_action(focus_item);
-        } else
+        }
+        else
         {
             play_control::get()->pause(!state);
         }
@@ -830,7 +970,8 @@ void mcp_manager::start(const std::string& host, int port)
     try
     {
         server = std::make_unique<foobar_mcp>(host, port);
-    } catch (const std::exception& e)
+    }
+    catch (const std::exception& e)
     {
         spdlog::error("Failed to start MCP server: {}", e.what());
         server = nullptr;
