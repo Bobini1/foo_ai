@@ -22,6 +22,7 @@ class foobar_mcp
     std::shared_ptr<current_track_resource> current_track_resource_ = std::make_shared<current_track_resource>();
 
     mcp::json list_library_handler(const mcp::json& params, const std::string& session_id);
+    mcp::json list_playlists_handler(const mcp::json& params, const std::string& session_id) const;
     mcp::json list_playlist_handler(const mcp::json& params, const std::string& session_id) const;
     mcp::json list_current_track_handler(const mcp::json& params, const std::string& session_id) const;
     mcp::json add_tracks_handler(const mcp::json& params, const std::string& session_id);

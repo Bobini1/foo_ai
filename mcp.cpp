@@ -40,6 +40,15 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
 
     server.register_tool(list_library_tool, std::bind_front(&foobar_mcp::list_library_handler, this));
 
+    const mcp::tool list_playlists_tool = mcp::tool_builder("list_playlists")
+                                          .with_description(
+                                              "Get all playlists with their metadata (name, track count, last modified, active/playing status). "
+                                              "Use this to discover available playlists and their GUIDs for use with other playlist tools. "
+                                              "You can read the playlists://. resource to get the same data and subscribe to changes.")
+                                          .build();
+
+    server.register_tool(list_playlists_tool, std::bind_front(&foobar_mcp::list_playlists_handler, this));
+
     const mcp::tool list_playlist_tool = mcp::tool_builder("list_playlist")
                                          .with_description("Get tracks from a playlist")
                                          .with_string_param("playlist_guid",
@@ -269,6 +278,17 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
                 "text",
                 std::format("Total tracks: {}, Returned tracks: {}, tracks: {}", total, tracks.size(), tracks.dump())
             }
+        }
+    };
+}
+
+mcp::json foobar_mcp::list_playlists_handler(const mcp::json& params, const std::string& session_id) const
+{
+    auto resource_data = playlist_resource_->read();
+    return {
+        {
+            {"type", "text"},
+            {"text", resource_data["text"]}
         }
     };
 }
