@@ -55,7 +55,7 @@ public:
 #ifdef _DEBUG
         spdlog::set_level(spdlog::level::debug);
 #else
-        spdlog::set_level(spdlog::level::error);
+        spdlog::set_level(spdlog::level::err);
 #endif
         const auto logger = std::make_shared<spdlog::logger>("foobar_ai", std::make_shared<foobar_sink>());
 
