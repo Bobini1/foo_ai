@@ -907,7 +907,9 @@ mcp::json foobar_mcp::create_playlist_handler(const mcp::json& params, const std
     {
         auto index = playlist_manager::get()->create_playlist(name.c_str(), pfc::infinite_size, pfc::infinite_size);
         playlist_manager::get()->playlist_rename(index, name.c_str(), pfc::infinite_size);
-        return std::to_string(index);
+        auto guid = playlist_manager_v5::get()->playlist_get_guid(index);
+        auto guid_str = pfc::print_guid(guid);
+        return std::string(guid_str.c_str());
     });
 
     return {
@@ -915,7 +917,7 @@ mcp::json foobar_mcp::create_playlist_handler(const mcp::json& params, const std
             {"type", "text"},
             {
                 "text",
-                std::format("Created new playlist with name '{}'", name)
+                std::format("Created new playlist with name '{}' and guid {}", name, playlist_guid)
             }
         }
     };
