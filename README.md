@@ -12,6 +12,14 @@ that supports SSE.
 The AI assistant can send requests to get information from the running music player
 or invoke actions like play, create playlists, change volume, etc.
 
+## Example tasks
+
+- "Make a new 80s rock playlist and play it."
+- "What's the name of the currently playing track?"
+- "Add this track to my 'Favorites' playlist."
+- "What's the oldest song in my library?"
+- "Turn up the volume a bit."
+
 ## Installation
 
 1. Download the latest release from the [Releases](https://github.com/Bobini1/foo_ai/releases) page.
