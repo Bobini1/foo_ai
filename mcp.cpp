@@ -311,15 +311,16 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
 
     auto get_volume_tool = mcp::tool_builder("get_volume")
                            .with_description("Get the current playback volume and mute state. "
-                                           "You can also read the volume://. resource to get the same data and subscribe to changes.")
+                               "You can also read the volume://. resource to get the same data and subscribe to changes.")
                            .build();
     server.register_tool(get_volume_tool, std::bind_front(&foobar_mcp::get_volume_handler, this));
 
     auto set_volume_tool = mcp::tool_builder("set_volume")
                            .with_description("Set the playback volume. "
-                                           "Volume is in decibels (dB), where 0 is full volume. "
-                                           "Negative values reduce volume (e.g., -10 dB is quieter).")
-                           .with_number_param("volume_db", "Volume level in dB (0 = full volume, negative = quieter)", true)
+                               "Volume is in decibels (dB), where 0 is full volume. "
+                               "Negative values reduce volume (e.g., -10 dB is quieter).")
+                           .with_number_param("volume_db", "Volume level in dB (0 = full volume, negative = quieter)",
+                                              true)
                            .build();
     server.register_tool(set_volume_tool, std::bind_front(&foobar_mcp::set_volume_handler, this));
 
