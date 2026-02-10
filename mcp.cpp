@@ -301,32 +301,31 @@ struct result
     size_t total;
 };
 
-static result handle_tracks(pfc::list_t<metadb_handle_ptr> items, const int limit, const int offset,
-                            const std::string& query,
+static result handle_tracks(search_index::ptr items, const int limit, const int offset,
+                            std::string query,
                             const std::vector<std::string>& fields)
 {
     mcp::json tracks = mcp::json::array();
 
     // Apply search filter if query provided
-    auto list = metadb_handle_list{items};
-    if (!query.empty())
+    auto list = pfc::list_t<metadb_handle_ptr>{};
+    if (query.empty())
     {
-        try
-        {
-            auto mgr = search_filter_manager_v2::get();
-            search_filter_v2::ptr filter = mgr->create_ex(query.c_str(),
-                                                          fb2k::makeCompletionNotify([](unsigned)
-                                                          {
-                                                          }),
-                                                          search_filter_manager_v2::KFlagSuppressNotify);
-
-            filter->test_multi_here(list, fb2k::noAbort);
-        }
-        catch (std::exception& e)
-        {
-            throw mcp::mcp_exception(mcp::error_code::invalid_params,
-                                     std::format("Invalid search query: {}", e.what()));
-        }
+        query = "ALL";
+    }
+    try
+    {
+        auto mgr = search_filter_manager_v2::get();
+        search_filter_v2::ptr filter = mgr->create_ex(query.c_str(),
+                                                      nullptr,
+                                                      search_filter_manager_v2::KFlagSuppressNotify);
+        const auto res = items->search(filter, nullptr, 0, fb2k::noAbort);
+        list = res->as_list_of<metadb_handle>();
+    }
+    catch (std::exception& e)
+    {
+        throw mcp::mcp_exception(mcp::error_code::invalid_params,
+                                 std::format("Invalid search query: {}", e.what()));
     }
 
     const size_t total = list.get_count();
@@ -387,9 +386,7 @@ mcp::json foobar_mcp::list_library_handler(const mcp::json& params, const std::s
 
     auto [tracks, total] = safe_main_thread_call([limit, offset, query = std::move(query), fields = std::move(fields)]()
     {
-        const auto lib_api = library_manager::get();
-        pfc::list_t<metadb_handle_ptr> items;
-        lib_api->get_all_items(items);
+        const auto items = search_index_manager::get()->get_library_index();
         return handle_tracks(items, limit, offset, query, fields);
     });
     return {
@@ -448,33 +445,28 @@ mcp::json foobar_mcp::list_playlist_handler(const mcp::json& params, const std::
     auto [result, index, path, playing, active, name] = safe_main_thread_call(
         [this, limit, offset, query = std::move(query), fields = std::move(fields), playlist_guid]()
         {
-            pfc::list_t<metadb_handle_ptr> items;
-            auto index = playlist_resource_->get_playlist_index(playlist_guid);
-            if (!index.has_value())
+            auto playlist_manager = playlist_manager_v5::get();
+            auto guid = pfc::GUID_from_text(playlist_guid.c_str());
+            auto index = playlist_manager->find_playlist_by_guid(guid);
+            if (index == pfc::infinite_size)
             {
                 throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
             }
-            bool active = playlist_manager::get()->get_active_playlist() == index.value();
-            bool playing = playlist_manager::get()->get_playing_playlist() == index.value();
+            bool active = playlist_manager::get()->get_active_playlist() == index;
+            bool playing = playlist_manager::get()->get_playing_playlist() == index;
             auto name_ptr = pfc::string8{};
-            playlist_manager::get()->playlist_get_name(index.value(), name_ptr);
+            playlist_manager::get()->playlist_get_name(index, name_ptr);
             std::string name = name_ptr.c_str();
-
-            playlist_manager::get()->playlist_enum_items(index.value(),
-                                                         [&items](size_t, const metadb_handle_ptr& handle, bool)
-                                                         {
-                                                             items.add_item(handle);
-                                                             return true;
-                                                         }, bit_array_true{});
-            auto result = handle_tracks(items, limit, offset, query, fields);
+            auto search_index = search_index_manager::get()->create_playlist_index(guid);
+            auto result = handle_tracks(search_index, limit, offset, query, fields);
             auto result2 = playlist_result{result, "", ""};
-            auto current_track = playlist_manager::get()->playlist_get_focus_item(index.value());
+            auto current_track = playlist_manager::get()->playlist_get_focus_item(index);
             result2.current_track_index = "-1";
             if (current_track != pfc::infinite_size)
             {
                 result2.current_track_index = std::to_string(current_track);
                 auto track = metadb_handle_ptr{};
-                if (playlist_manager::get()->playlist_get_item_handle(track, index.value(), current_track))
+                if (playlist_manager::get()->playlist_get_item_handle(track, index, current_track))
                 {
                     auto info = track->get_info_ref();
                     result2.current_track_path = track->get_path();
@@ -522,7 +514,8 @@ mcp::json foobar_mcp::list_current_track_handler(const mcp::json& params, const 
                 return mcp::json(nullptr);
             }
             items.add_item(track);
-            auto result = handle_tracks(items, 1, 0, "", fields);
+            auto search_index = search_index_manager::get()->create_index(items, nullptr);
+            auto result = handle_tracks(search_index, 1, 0, "", fields);
             auto json = result.tracks[0];
             json["is_playing"] = play_control::get()->is_playing() && !play_control::get()->is_paused();
             json["position_seconds"] = play_control::get()->playback_get_position();
@@ -744,12 +737,12 @@ mcp::json foobar_mcp::set_active_playlist_handler(const mcp::json& params, const
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = playlist_resource_->get_playlist_index(playlist_guid);
-        if (!index.has_value())
+        const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+        if (index == pfc::infinite_size)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
         }
-        playlist_manager::get()->set_active_playlist(index.value());
+        playlist_manager::get()->set_active_playlist(index);
     });
 
     return {
@@ -771,15 +764,15 @@ mcp::json foobar_mcp::set_playing_playlist_handler(const mcp::json& params, cons
     }
     auto playlist_guid = params["playlist_guid"].get<std::string>();
 
-    safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
+    safe_main_thread_call([playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = playlist_resource_->get_playlist_index(playlist_guid);
-        if (!index.has_value())
+        const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+        if (index == pfc::infinite_size)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
         }
-        playlist_manager::get()->set_active_playlist(index.value());
-        playlist_manager::get()->set_playing_playlist(index.value());
+        playlist_manager::get()->set_active_playlist(index);
+        playlist_manager::get()->set_playing_playlist(index);
     });
 
     return {
@@ -927,12 +920,12 @@ mcp::json foobar_mcp::rename_playlist_handler(const mcp::json& params, const std
     safe_main_thread_call(
         [this, playlist_guid = std::move(playlist_guid), new_name = std::move(new_name)]()
         {
-            const auto index = playlist_resource_->get_playlist_index(playlist_guid);
-            if (!index.has_value())
+            const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+            if (index == pfc::infinite_size)
             {
                 throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
             }
-            playlist_manager::get()->playlist_rename(index.value(), new_name.c_str(), pfc::infinite_size);
+            playlist_manager::get()->playlist_rename(index, new_name.c_str(), pfc::infinite_size);
         });
 
     return {
@@ -956,12 +949,12 @@ mcp::json foobar_mcp::delete_playlist_handler(const mcp::json& params, const std
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = playlist_resource_->get_playlist_index(playlist_guid);
-        if (!index.has_value())
+        const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+        if (index == pfc::infinite_size)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
         }
-        playlist_manager::get()->remove_playlist(index.value());
+        playlist_manager::get()->remove_playlist(index);
     });
 
     return {
