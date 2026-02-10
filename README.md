@@ -12,6 +12,8 @@ that supports SSE (tested with GitHub Copilot and Cursor).
 The AI assistant can send requests to get information from the running music player
 or invoke actions like play, create playlists, change volume, etc.
 
+Compatible with foobar v2.0+, x86 and x64.
+
 ## Example tasks
 
 - "Make a new 80s rock playlist and play it."
