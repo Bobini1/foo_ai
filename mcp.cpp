@@ -128,6 +128,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
 
     server.register_resource(playlist_resource_);
     server.register_resource(current_track_resource_);
+    server.register_resource(volume_resource_);
 
     const mcp::tool list_library_tool = mcp::tool_builder("list_library")
                                         .with_description("Get tracks from the user's media library")
@@ -301,6 +302,25 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                 .with_string_param("playlist_guid", "ID of the playlist to delete", true)
                                 .build();
     server.register_tool(delete_playlist_tool, std::bind_front(&foobar_mcp::delete_playlist_handler, this));
+
+    auto get_volume_tool = mcp::tool_builder("get_volume")
+                           .with_description("Get the current playback volume and mute state. "
+                                           "You can also read the volume://. resource to get the same data and subscribe to changes.")
+                           .build();
+    server.register_tool(get_volume_tool, std::bind_front(&foobar_mcp::get_volume_handler, this));
+
+    auto set_volume_tool = mcp::tool_builder("set_volume")
+                           .with_description("Set the playback volume. "
+                                           "Volume is in decibels (dB), where 0 is full volume. "
+                                           "Negative values reduce volume (e.g., -10 dB is quieter).")
+                           .with_number_param("volume_db", "Volume level in dB (0 = full volume, negative = quieter)", true)
+                           .build();
+    server.register_tool(set_volume_tool, std::bind_front(&foobar_mcp::set_volume_handler, this));
+
+    auto toggle_mute_tool = mcp::tool_builder("toggle_mute")
+                            .with_description("Toggle the mute state on or off")
+                            .build();
+    server.register_tool(toggle_mute_tool, std::bind_front(&foobar_mcp::toggle_mute_handler, this));
 
     server.start(false);
 }
@@ -980,6 +1000,63 @@ mcp::json foobar_mcp::delete_playlist_handler(const mcp::json& params, const std
             {
                 "text",
                 std::format("Deleted playlist '{}'", playlist_guid)
+            }
+        }
+    };
+}
+
+mcp::json foobar_mcp::get_volume_handler(const mcp::json& params, const std::string& session_id) const
+{
+    auto resource_data = volume_resource_->read();
+    return {
+        {
+            {"type", "text"},
+            {"text", resource_data.dump()}
+        }
+    };
+}
+
+mcp::json foobar_mcp::set_volume_handler(const mcp::json& params, const std::string& session_id)
+{
+    if (!params.contains("volume_db"))
+    {
+        throw mcp::mcp_exception(mcp::error_code::invalid_params, "volume_db parameter is required");
+    }
+
+    auto volume_db = params["volume_db"].get<float>();
+
+    safe_main_thread_call([volume_db]()
+    {
+        auto pc = playback_control::get();
+        pc->set_volume(volume_db);
+    });
+
+    return {
+        {
+            {"type", "text"},
+            {
+                "text",
+                std::format("Volume set to {} dB", volume_db)
+            }
+        }
+    };
+}
+
+mcp::json foobar_mcp::toggle_mute_handler(const mcp::json& params, const std::string& session_id)
+{
+    auto new_state = safe_main_thread_call([]()
+    {
+        auto pc = playback_control::get();
+        pc->volume_mute_toggle();
+        return pc->is_muted();
+    });
+
+    return {
+        {
+            {"type", "text"},
+            {
+                "text",
+                std::format("Volume {}", new_state ? "muted" : "unmuted")
             }
         }
     };
