@@ -1,5 +1,5 @@
 //
-// Created by PC on 08/02/2026.
+// Created by Bobini on 08/02/2026.
 //
 
 #ifndef FOOBAR_AI_CURRENT_TRACK_RESOURCE_H
