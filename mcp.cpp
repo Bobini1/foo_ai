@@ -150,7 +150,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                           "Default: path, artist, title, album. "
                                                           "Other common tags: genre, date, composer, performer, "
                                                           "album artist, tracknumber, discnumber, comment, subtitle, "
-                                                          "bitrate, filesize, samplerate, channels",
+                                                          "bitrate, filesize, samplerate, channels, last_modified",
                                                           "string",
                                                           false)
                                         .build();
@@ -190,7 +190,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                            "Default: path, artist, title, album. "
                                                            "Other common tags: genre, date, composer, performer, "
                                                            "album artist, tracknumber, discnumber, comment, subtitle, "
-                                                           "bitrate, filesize, samplerate, channels",
+                                                           "bitrate, filesize, samplerate, channels, last_modified",
                                                            "string",
                                                            false)
                                          .build();
@@ -204,7 +204,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                 "Default: path, artist, title, album. "
                                                 "Other common tags: genre, date, composer, performer, "
                                                 "album artist, tracknumber, discnumber, comment, subtitle, "
-                                                "bitrate, filesize, samplerate, channels",
+                                                "bitrate, filesize, samplerate, channels, last_modified",
                                                 "string",
                                                 false)
                               .build();
