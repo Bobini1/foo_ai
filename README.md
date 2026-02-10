@@ -1,3 +1,7 @@
+<p align=center>
+    <a href="https://github.com/Bobini1/foo_ai/releases/latest"><img alt="GitHub Downloads (all assets, all releases)" src="https://img.shields.io/github/downloads/Bobini1/foo_ai/total"></a>
+</p>
+
 # foo_ai
 
 AI MCP control for foobar2000.
