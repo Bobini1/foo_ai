@@ -253,7 +253,8 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
 
     auto add_tracks_tool = mcp::tool_builder("add_tracks")
                            .with_description("Add filesystem tracks to the active playlist. "
-                               "Returns the index they were inserted at.")
+                               "Returns the index they were inserted at. "
+                               "Use this tool in combination with play_at_index when requested to play a track.")
                            .with_array_param("uris", "Uris of the tracks to add.", "string", true)
                            .with_number_param("index", "Index to insert at (default: append)", false)
                            .build();
@@ -902,7 +903,7 @@ mcp::json foobar_mcp::create_playlist_handler(const mcp::json& params, const std
     }
     auto name = params["name"].get<std::string>();
 
-    auto playlist_guid = safe_main_thread_call([name = std::move(name)]()
+    auto playlist_guid = safe_main_thread_call([name]
     {
         auto index = playlist_manager::get()->create_playlist(name.c_str(), pfc::infinite_size, pfc::infinite_size);
         playlist_manager::get()->playlist_rename(index, name.c_str(), pfc::infinite_size);
