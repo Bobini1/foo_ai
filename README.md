@@ -20,6 +20,8 @@ or invoke actions like play, create playlists, change volume, etc.
 - "What's the oldest song in my library?"
 - "Turn up the volume a bit."
 
+![Example - creating a playlist with Kaczmarski's best songs](example.png)
+
 ## Installation
 
 1. Download the latest release from the [Releases](https://github.com/Bobini1/foo_ai/releases) page.
