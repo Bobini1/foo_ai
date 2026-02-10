@@ -65,6 +65,6 @@ but it can be useful for real-time updates, if your MCP client supports it.
 
 The following resources are available:
 - `current_track://.`: Contains info about the current track: when it was last changed and it's playing/paused state.
-- `playlists://.`: It contains the same info as the `list_playlists` tool - playlist names, track counts,
+- `playlists://.`: Contains the same info as the `list_playlists` tool - playlist names, track counts,
 last modification times, active/playing states, etc.
-- `volume://.`: It contains the same info as the `get_volume` tool.
+- `volume://.`: Contains the same info as the `get_volume` tool.
