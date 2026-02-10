@@ -55,7 +55,7 @@ it will receive updates whenever it is updated in the player.
 This isn't a crucial feature as clients can always call the tools to get the latest info,
 but it can be useful for real-time updates, if your MCP client supports it.
 
-the following resources are available:
+The following resources are available:
 - `current_track://.`: Contains info about the current track: when it was last changed and it's playing/paused state.
 - `playlists://.`: It contains the same info as the `list_playlists` tool - playlist names, track counts,
 last modification times, active/playing states, etc.
