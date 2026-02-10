@@ -15,7 +15,7 @@ mcp::json volume_resource::get_metadata() const
 {
     return {
         {"uri", get_uri()},
-        {"name", "Volume Control"},
+        {"name", "Volume"},
         {
             "description",
             "Tracks the playback volume and mute state. "
