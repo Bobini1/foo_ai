@@ -134,14 +134,19 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                         .with_number_param("limit", "Max tracks to return (default: 50)", false)
                                         .with_number_param("offset", "Skip first N tracks", false)
                                         .with_string_param(
-                                            "query", "foobar2000 search query (e.g. 'artist HAS beatles') "
+                                            "query", "foobar2000 search query "
+                                            "(e.g. '%artist% HAS beatles SORT DESCENDING BY %date%') "
+                                            "Operators: AND, OR, NOT, HAS, IS, SORT BY, EQUAL, GREATER, LESS, BEFORE, DURING, AFTER, DURING LAST n SECONDS/MINUTES/HOURS/DAYS/WEEKS, MISSING, PRESENT. "
+                                            "HAS can be used with * instead of field name. "
+                                            "Special query: ALL to get all tracks without filtering. Can be sorted. "
                                             "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Query_syntax ",
                                             false)
                                         .with_array_param("fields", "Fields to return: "
                                                           "path, duration_seconds or any tag contained in audio files. "
                                                           "Default: path, artist, title, album. "
                                                           "Other common tags: genre, date, composer, performer, "
-                                                          "album artist, track number, disc number, comment, subtitle",
+                                                          "album artist, tracknumber, discnumber, comment, subtitle, "
+                                                          "bitrate, filesize, samplerate, channels",
                                                           "string",
                                                           false)
                                         .build();
@@ -165,14 +170,19 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                          .with_number_param("limit", "Max tracks to return (default: 50)", false)
                                          .with_number_param("offset", "Skip first N tracks", false)
                                          .with_string_param(
-                                             "query", "foobar2000 search query (e.g. 'artist HAS beatles')"
+                                             "query", "foobar2000 search query "
+                                             "(e.g. '%artist% HAS beatles SORT DESCENDING BY %date%') "
+                                             "Operators: AND, OR, NOT, HAS, IS, SORT BY, EQUAL, GREATER, LESS, BEFORE, DURING, AFTER, DURING LAST n SECONDS/MINUTES/HOURS/DAYS/WEEKS, MISSING, PRESENT. "
+                                             "HAS can be used with * instead of field name. "
+                                             "Special query: ALL to get all tracks without filtering. Can be sorted. "
                                              "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Query_syntax ",
                                              false)
                                          .with_array_param("fields", "Fields to return: "
                                                            "path, duration_seconds or any tag contained in audio files. "
-                                                           "Default: path, artist, title, album "
+                                                           "Default: path, artist, title, album. "
                                                            "Other common tags: genre, date, composer, performer, "
-                                                           "album artist, track number, disc number, comment, subtitle",
+                                                           "album artist, tracknumber, discnumber, comment, subtitle, "
+                                                           "bitrate, filesize, samplerate, channels",
                                                            "string",
                                                            false)
                                          .build();
@@ -183,7 +193,10 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                               .with_description("Get the currently playing track")
                               .with_array_param("fields", "Fields to return: "
                                                 "path, duration_seconds or any tag contained in audio files. "
-                                                "Default: path, artist, title, album",
+                                                "Default: path, artist, title, album. "
+                                                "Other common tags: genre, date, composer, performer, "
+                                                "album artist, tracknumber, discnumber, comment, subtitle, "
+                                                "bitrate, filesize, samplerate, channels",
                                                 "string",
                                                 false)
                               .build();
@@ -233,7 +246,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
     auto add_tracks_tool = mcp::tool_builder("add_tracks")
                            .with_description("Add filesystem tracks to the active playlist")
                            .with_array_param("uris", "Absolute file uris to add", "string", true)
-                           .with_number_param("position", "Index to insert at (default: append)", false)
+                           .with_number_param("index", "Index to insert at (default: append)", false)
                            .build();
     server.register_tool(add_tracks_tool, std::bind_front(&foobar_mcp::add_tracks_handler, this));
 
@@ -545,12 +558,12 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
     {
         throw mcp::mcp_exception(mcp::error_code::invalid_params, "uris parameter is required");
     }
-    auto position = params.value("position", SIZE_MAX);
+    auto index = params.value("index", SIZE_MAX);
 
     auto uris = params["uris"].get<std::vector<std::string>>();
     auto uris_size = uris.size();
 
-    auto added = safe_main_thread_call([uris = std::move(uris), position]()
+    auto [added, inserted_index] = safe_main_thread_call([uris = std::move(uris), index]()
     {
         auto list = pfc::list_t<metadb_handle_ptr>{};
         for (const auto& p : uris)
@@ -578,11 +591,13 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
                 if (auto resolved = std::filesystem::path(c_path); exists(resolved))
                 {
                 }
-                else if (auto resolved = std::filesystem::path(reinterpret_cast<const char8_t*>(normalized_c.c_str())); exists(resolved))
+                else if (auto resolved = std::filesystem::path(reinterpret_cast<const char8_t*>(normalized_c.c_str()));
+                    exists(resolved))
                 {
                     path = normalized_c.c_str();
                 }
-                else if (auto resolved = std::filesystem::path(reinterpret_cast<const char8_t*>(normalized_d.c_str())); exists(resolved))
+                else if (auto resolved = std::filesystem::path(reinterpret_cast<const char8_t*>(normalized_d.c_str()));
+                    exists(resolved))
                 {
                     path = normalized_d.c_str();
                 }
@@ -607,9 +622,9 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
                                                  nullptr);
         }
 
-        playlist_manager::get()->playlist_insert_items(playlist_manager::get()->get_active_playlist(), position, list,
-                                                       bit_array_true{});
-        return list.get_count();
+        auto inserted_index = playlist_manager::get()->activeplaylist_insert_items(index, list,
+            bit_array_true{});
+        return std::make_pair(list.get_count(), inserted_index);
     });
 
     return {
@@ -617,7 +632,8 @@ mcp::json foobar_mcp::add_tracks_handler(const mcp::json& params, const std::str
             {"type", "text"},
             {
                 "text",
-                std::format("Added {} tracks to the active playlist ({} failed)", added, uris_size - added)
+                std::format("Added {} tracks to the active playlist ({} failed) "
+                            "starting at index {}", added, uris_size - added, inserted_index)
             }
         }
     };
