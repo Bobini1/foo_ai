@@ -327,7 +327,8 @@ static result handle_tracks(search_index::ptr items, const int limit, const int 
         auto mgr = search_filter_manager_v2::get();
         search_filter_v2::ptr filter = mgr->create_ex(query.c_str(),
                                                       nullptr,
-                                                      search_filter_manager_v2::KFlagAllowSort | search_filter_manager_v2::KFlagSuppressNotify);
+                                                      search_filter_manager_v2::KFlagAllowSort |
+                                                      search_filter_manager_v2::KFlagSuppressNotify);
         const auto res = items->search(filter, nullptr, search_index::flag_sort, fb2k::noAbort);
         list = res->as_list_of<metadb_handle>();
     }
