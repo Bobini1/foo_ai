@@ -151,7 +151,9 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                           "Default: path, artist, title, album. "
                                                           "Other common tags: genre, date, composer, performer, "
                                                           "album artist, tracknumber, discnumber, comment, subtitle, "
-                                                          "bitrate, filesize, samplerate, channels, last_modified",
+                                                          "bitrate, filesize, samplerate, "
+                                                          "channels (mono, stereo, 3ch, 4ch, ...), last_modified. "
+                                                          "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Title_Formatting_Reference",
                                                           "string",
                                                           false)
                                         .build();
@@ -191,7 +193,9 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                            "Default: path, artist, title, album. "
                                                            "Other common tags: genre, date, composer, performer, "
                                                            "album artist, tracknumber, discnumber, comment, subtitle, "
-                                                           "bitrate, filesize, samplerate, channels, last_modified",
+                                                           "bitrate, filesize, samplerate, "
+                                                           "channels (mono, stereo, 3ch, 4ch, ...), last_modified. "
+                                                           "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Title_Formatting_Reference",
                                                            "string",
                                                            false)
                                          .build();
@@ -205,7 +209,9 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                                 "Default: path, artist, title, album. "
                                                 "Other common tags: genre, date, composer, performer, "
                                                 "album artist, tracknumber, discnumber, comment, subtitle, "
-                                                "bitrate, filesize, samplerate, channels, last_modified",
+                                                "bitrate, filesize, samplerate, channels (mono, stereo, 3ch, 4ch, ...), "
+                                                "last_modified. "
+                                                "Docs: https://wiki.hydrogenaudio.org/index.php?title=Foobar2000:Title_Formatting_Reference",
                                                 "string",
                                                 false)
                               .build();
