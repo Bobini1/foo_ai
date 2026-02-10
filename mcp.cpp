@@ -933,7 +933,7 @@ mcp::json foobar_mcp::rename_playlist_handler(const mcp::json& params, const std
     auto new_name = params["new_name"].get<std::string>();
 
     safe_main_thread_call(
-        [this, playlist_guid = std::move(playlist_guid), new_name = std::move(new_name)]()
+        [playlist_guid = std::move(playlist_guid), new_name = std::move(new_name)]()
         {
             const auto index = playlist_manager_v5::get()->find_playlist_by_guid(
                 pfc::GUID_from_text(playlist_guid.c_str()));
