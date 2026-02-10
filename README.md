@@ -7,7 +7,7 @@ Control your music player with an AI assistant!
 
 This component starts a local [Model Context Protocol](https://modelcontextprotocol.io)
 server. You can connect to it with any [MCP client](https://modelcontextprotocol.io/clients)
-that supports SSE (tested with Github Copilot and Cursor).
+that supports SSE (tested with GitHub Copilot and Cursor).
 
 The AI assistant can send requests to get information from the running music player
 or invoke actions like play, create playlists, change volume, etc.
