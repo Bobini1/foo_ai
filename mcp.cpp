@@ -252,7 +252,7 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
     server.register_tool(play_at_index_tool, std::bind_front(&foobar_mcp::play_at_index_handler, this));
 
     auto add_tracks_tool = mcp::tool_builder("add_tracks")
-                           .with_description("Add filesystem tracks to the active playlist. "
+                           .with_description("Add tracks to the active playlist. "
                                "Returns the index they were inserted at. "
                                "Use this tool in combination with play_at_index when requested to play a track.")
                            .with_array_param("uris", "Uris of the tracks to add.", "string", true)
