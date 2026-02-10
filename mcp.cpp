@@ -131,7 +131,11 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
 
     const mcp::tool list_library_tool = mcp::tool_builder("list_library")
                                         .with_description("Get tracks from the user's media library")
-                                        .with_number_param("limit", "Max tracks to return (default: 50)", false)
+                                        .with_number_param("limit",
+                                                           "Max tracks to return (default: 50). "
+                                                           "Use a low limit with sorting when you want to find <the oldest song> or "
+                                                           "<the longest song> for example. ",
+                                                           false)
                                         .with_number_param("offset", "Skip first N tracks", false)
                                         .with_string_param(
                                             "query", "foobar2000 search query "
@@ -167,7 +171,11 @@ foobar_mcp::foobar_mcp(const std::string& host, int port)
                                          .with_string_param("playlist_guid",
                                                             "ID of the playlist to retrieve tracks from",
                                                             true)
-                                         .with_number_param("limit", "Max tracks to return (default: 50)", false)
+                                         .with_number_param("limit",
+                                                            "Max tracks to return (default: 50). "
+                                                            "Use a low limit with sorting when you want to find <the oldest song> or "
+                                                            "<the longest song> for example. ",
+                                                            false)
                                          .with_number_param("offset", "Skip first N tracks", false)
                                          .with_string_param(
                                              "query", "foobar2000 search query "
@@ -737,7 +745,8 @@ mcp::json foobar_mcp::set_active_playlist_handler(const mcp::json& params, const
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+        const auto index = playlist_manager_v5::get()->
+            find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
         if (index == pfc::infinite_size)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -766,7 +775,8 @@ mcp::json foobar_mcp::set_playing_playlist_handler(const mcp::json& params, cons
 
     safe_main_thread_call([playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+        const auto index = playlist_manager_v5::get()->
+            find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
         if (index == pfc::infinite_size)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -920,7 +930,8 @@ mcp::json foobar_mcp::rename_playlist_handler(const mcp::json& params, const std
     safe_main_thread_call(
         [this, playlist_guid = std::move(playlist_guid), new_name = std::move(new_name)]()
         {
-            const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+            const auto index = playlist_manager_v5::get()->find_playlist_by_guid(
+                pfc::GUID_from_text(playlist_guid.c_str()));
             if (index == pfc::infinite_size)
             {
                 throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
@@ -949,7 +960,8 @@ mcp::json foobar_mcp::delete_playlist_handler(const mcp::json& params, const std
 
     safe_main_thread_call([this, playlist_guid = std::move(playlist_guid)]()
     {
-        const auto index = playlist_manager_v5::get()->find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
+        const auto index = playlist_manager_v5::get()->
+            find_playlist_by_guid(pfc::GUID_from_text(playlist_guid.c_str()));
         if (index == pfc::infinite_size)
         {
             throw mcp::mcp_exception(mcp::error_code::invalid_params, "Playlist not found");
